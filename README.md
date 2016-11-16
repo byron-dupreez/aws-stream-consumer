@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.1
+# aws-stream-consumer v1.0.0-beta.2
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -143,7 +143,6 @@ streamProcessing.configureDefaultStreamProcessing(context, true); // ... or your
 const streamConsumerConfig = require('aws-stream-consumer/stream-consumer-config');
 streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
 ```
-
 2. Define the tasks that you want to execute on individual messages and/or on the entire batch of messages
 ```js
 const taskDefs = require('task-utils/task-defs');
@@ -160,7 +159,6 @@ saveMessageTaskDef.defineSubTasks(['sendPushNotification', 'sendEmail']);
 function logMessagesToS3(messages, context) { /* ... */ }
 const logMessagesToS3TaskDef = TaskDef.defineTask('logMessagesToS3', logMessagesToS3); // ... with sub-task definitions if needed
 ```
-
 3. Process the AWS Kinesis (or DynamoDB) stream event
 ```js
 const processOneTaskDefs = [saveMessageTaskDef]; // ... and/or more task definitions
@@ -169,10 +167,8 @@ const processAllTaskDefs = [logMessagesToS3TaskDef]; // ... and/or more task def
 const streamConsumer = require('aws-stream-consumer/stream-consumer');
 const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 ```
-
 4. Within your custom task execute function(s), update the message's (or messages') tasks' and/or sub-tasks' states
-
-* Example custom "process one" task execute function for processing a single, individual message at a time
+   * Example custom "process one" task execute function for processing a single, individual message at a time
 ```js
 function saveMessageToDynamoDB(message, context) {
   // Note that 'this' will be the currently executing task witin your custom task execute function
@@ -201,8 +197,7 @@ function saveMessageToDynamoDB(message, context) {
   // ...
 }
 ```
-
-* Example custom "process all" task execute function for processing the entire batch of messages
+   * Example custom "process all" task execute function for processing the entire batch of messages
 ```js
 function logMessagesToS3(messages, context) {
   // Note that 'this' will be the currently executing master task witin your custom task execute function
@@ -265,3 +260,7 @@ See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) f
 
 ### 1.0.0-beta.1
 - First beta release - unit tested, but not battle tested 
+
+### 1.0.0-beta.2
+- Changes to `stream-processing` module: 
+  - Changed `discardRejectedMessagesToDMQ` function to wrap the original message in a rejected message "envelope" with metadata

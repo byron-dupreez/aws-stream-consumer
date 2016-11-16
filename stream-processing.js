@@ -96,6 +96,7 @@ module.exports = {
 
 const regions = require('aws-core-utils/regions');
 const stages = require('aws-core-utils/stages');
+const streamEvents = require('aws-core-utils/stream-events');
 const kinesisUtils = require('aws-core-utils/kinesis-utils');
 const configureKinesis = kinesisUtils.configureKinesis;
 
@@ -514,17 +515,35 @@ function discardRejectedMessagesToDMQ(rejectedMessages, context) {
   const deadMessageQueueName = stages.toStageQualifiedStreamName(unqualifiedDeadMessageQueueName, context.stage, context);
 
   function sendMessageToDMQ(message) {
+    // Get the original record's key information
     const origRecord = getRecord(message, context);
     const partitionKey = origRecord.kinesis.partitionKey;
     const explicitHashKey = origRecord.kinesis.explicitHashKey;
     const sequenceNumber = origRecord.kinesis.sequenceNumber;
+
+    // Get the original record's event source stream name
+    const eventSourceStreamName = streamEvents.getEventSourceStreamName(origRecord);
+    const sourceStreamName = eventSourceStreamName ? eventSourceStreamName :
+      context.streamConsumer ? context.streamConsumer.resubmitStreamName : '';
+
+    // Wrap the message in a rejected message "envelope" with metadata
+    const rejectedMessage = {
+      streamName: sourceStreamName,
+      message: message,
+      partitionKey: partitionKey,
+      sequenceNumber: sequenceNumber,
+      discardedAt: new Date().toISOString()
+    };
+    if (explicitHashKey) {
+      rejectedMessage.explicitHashKey = explicitHashKey;
+    }
 
     // discard message to DMQ
     const request = {
       StreamName: deadMessageQueueName,
       PartitionKey: partitionKey,
       SequenceNumberForOrdering: sequenceNumber,
-      Data: JSON.stringify(message)
+      Data: JSON.stringify(rejectedMessage)
     };
     if (explicitHashKey) {
       request.ExplicitHashKey = explicitHashKey;
