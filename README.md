@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.2
+# aws-stream-consumer v1.0.0-beta.3
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -14,7 +14,7 @@ Utilities for building robust AWS Lambda consumers of stream events from Amazon 
 
 The goal of the AWS stream consumer functions is to make the process of consuming records from an AWS Kinesis or DynamoDB 
 stream more robust for an AWS Lambda stream consumer by providing solutions to and workarounds for common AWS stream 
-consumption issues.
+consumption issues. 
 
 #### Common AWS stream consumption issues
 1. The fundamental issue is that either all of a stream event's records must be processed successfully or an error must 
@@ -96,14 +96,19 @@ consumption issues.
    processing due to an error, then it is unfortunately left with no choice, but to throw the error back to AWS Lambda 
    to trigger a replay of the entire batch of records to prevent message loss. These errors need to be monitored.
    
-## Current state
-The default configuration currently supports consuming AWS Kinesis stream events. While the current stream consumer code 
-allows for customisation of stream processing behaviour to support AWS DynamoDB stream events, there is currently no 
-out-of-the-box default configuration for supporting AWS DynamoDB stream events.
-
-This module is exported as a [Node.js](https://nodejs.org/) module.
+## Current limitations
+- The default configuration currently supports consuming AWS Kinesis stream events. 
+- While the current stream consumer code allows for customisation of stream processing behaviour to support AWS DynamoDB 
+  stream events, there is currently no out-of-the-box default configuration for supporting AWS DynamoDB stream events.
+- The AWS stream consumer functions focus on ensuring "at least once" message delivery semantics, so currently there is 
+  no support planned for "at most once" message delivery semantics.
+- The message resubmission strategy attempts to preserve some semblance of the original sequence by resubmitting messages 
+  using the Kinesis SequenceNumberForOrdering parameter set to the source record's sequence number. However, this does 
+  not guarantee that the original sequence will be preserved, so if message sequence is vital you will need to cater for
+  this separately.
 
 ## Installation
+This module is exported as a [Node.js](https://nodejs.org/) module.
 
 Using npm:
 ```bash
@@ -111,7 +116,7 @@ $ {sudo -H} npm i -g npm
 $ npm i --save aws-stream-consumer
 ```
 
-In Node.js:
+## Usage 
 
 To use the `aws-stream-consumer` module:
 
@@ -120,9 +125,10 @@ To use the `aws-stream-consumer` module:
 // Create a context object
 const context = {}; // ... or your own context object
 
+const config = require('./config.json'); // ... or your own configuration file
+
 // Configure logging
 const logging = require('logging-utils');
-const config = require('./config.json'); // ... or your own configuration file
 logging.configureLoggingFromConfig(context, config, undefined, true); // ... or configureDefaultLogging
 
 // Configure stage-handling
@@ -131,13 +137,12 @@ stages.configureDefaultStageHandling(context, true); // ... or your own custom s
 
 // Configure a default Kinesis instance (if you are using the default stream processing configuration or you are using Kinesis)
 const kinesisUtils = require('aws-core-utils/kinesis-utils');
-const kinesisOptions = {maxRetries: 0}; // ... or your own Kinesis constructor options
-// Only specify a region in these kinesisOptions if you do NOT want to use your AWS Lambda's region
-kinesisUtils.configureKinesis(context, kinesisOptions);
+// Only specify a region in the kinesisOptions if you do NOT want to use your AWS Lambda's region
+kinesisUtils.configureKinesis(context, config.kinesisOptions);
 
 // Configure stream processing
 const streamProcessing = require('aws-stream-consumer/stream-processing');
-streamProcessing.configureDefaultStreamProcessing(context, true); // ... or your own custom stream processing configuration
+streamProcessing.configureDefaultKinesisStreamProcessing(context, true); // ... or your own custom stream processing configuration
 
 // Configure the stream consumer's runtime settings
 const streamConsumerConfig = require('aws-stream-consumer/stream-consumer-config');
@@ -150,14 +155,14 @@ const TaskDef = taskDefs.TaskDef;
 
 // Example process (one) individual message task definition
 function saveMessageToDynamoDB(message, context) { /* ... */ }
-const saveMessageTaskDef = TaskDef.defineTask('saveMessageToDynamoDB', saveMessageToDynamoDB);
+const saveMessageTaskDef = TaskDef.defineTask(saveMessageToDynamoDB.name, saveMessageToDynamoDB);
 
 // Add optional sub-task definition(s) to any of your task definitions as needed
 saveMessageTaskDef.defineSubTasks(['sendPushNotification', 'sendEmail']);
 
 // Example process (all) entire batch of messages task definition
 function logMessagesToS3(messages, context) { /* ... */ }
-const logMessagesToS3TaskDef = TaskDef.defineTask('logMessagesToS3', logMessagesToS3); // ... with sub-task definitions if needed
+const logMessagesToS3TaskDef = TaskDef.defineTask(logMessagesToS3.name, logMessagesToS3); // ... with sub-task definitions if needed
 ```
 3. Process the AWS Kinesis (or DynamoDB) stream event
 ```js
@@ -176,7 +181,7 @@ function saveMessageToDynamoDB(message, context) {
   const subTask = task.getSubTask('sendPushNotification');
   
   // ... or alternatively from anywhere in the flow of your custom execute code
-  const task1 = streamConsumer.getProcessOneTask(message, 'saveMessageToDynamoDB', context);
+  const task1 = streamConsumer.getProcessOneTask(message, saveMessageToDynamoDB.name, context);
   const subTask1 = task1.getSubTask('sendPushNotification');
   
   const subTask2 = task1.getSubTask('sendEmail');
@@ -206,7 +211,7 @@ function logMessagesToS3(messages, context) {
   const masterSubTask = masterTask.getSubTask('doX');
   
   // ... or alternatively from anywhere in the flow of your custom execute code
-  const masterTask1 = streamConsumer.getProcessAllTask(messages, 'logMessagesToS3', context);
+  const masterTask1 = streamConsumer.getProcessAllTask(messages, logMessagesToS3.name, context);
   const masterSubTask1 = masterTask1.getSubTask('doX');
   
   const masterSubTask2 = masterTask1.getSubTask('doY');
@@ -228,7 +233,7 @@ function logMessagesToS3(messages, context) {
   
   // ALTERNATIVELY (or in addition) change the task state of individual messages
   const firstMessage = messages[0]; // e.g. working with the first message in the batch
-  const messageTask1 = streamConsumer.getProcessAllTask(firstMessage, 'logMessagesToS3', context);
+  const messageTask1 = streamConsumer.getProcessAllTask(firstMessage, logMessagesToS3.name, context);
   const messageSubTask1 = messageTask1.getSubTask('doX');
   messageSubTask1.reject('Cannot do X on first message', new Error('X is un-doable on first message'), true);
   messageTask1.fail(new Error('Task failed on first message'));
@@ -258,9 +263,23 @@ See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) f
 
 ## Changes
 
-### 1.0.0-beta.1
-- First beta release - unit tested, but not battle tested 
+### 1.0.0-beta.3
+- Changes to `stream-consumer` module: 
+  - Removed unused module-scope region constant.
+  - Changed validation of stream event records to do specific validation based on stream type.
+- Changes to `stream-processing` module:
+  - Renamed `configureDefaultStreamProcessing` function to `configureDefaultKinesisStreamProcessing`.
+  - Renamed `getDefaultStreamProcessingSettings` function to `getDefaultKinesisStreamProcessingSettings`.
+- Changes to `stream-consumer-config` module:
+  - Renamed `configureDefaultStreamProcessingIfNotConfigured` function to `configureDefaultKinesisStreamProcessingIfNotConfigured`.
+- Removed unused `computeChecksums` setting from `config.json`.
+- Updated `aws-core-utils` dependency to version 2.1.4.
+- Updated `README.md` usage and limitations documentation.
 
 ### 1.0.0-beta.2
 - Changes to `stream-processing` module: 
   - Changed `discardRejectedMessagesToDMQ` function to wrap the original message in a rejected message "envelope" with metadata
+
+### 1.0.0-beta.1
+- First beta release - unit tested, but not battle tested 
+

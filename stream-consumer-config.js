@@ -74,7 +74,7 @@ function configureStreamConsumer(context, event, awsContext) {
   configureRegionStageAndAwsContext(context, event, awsContext);
 
   // Configure stream processing if not configured yet
-  configureDefaultStreamProcessingIfNotConfigured(context);
+  configureDefaultKinesisStreamProcessingIfNotConfigured(context);
 
   if (!context.streamConsumer) {
     context.streamConsumer = {};
@@ -128,11 +128,11 @@ function configureDefaultStageHandlingIfNotConfigured(context, caller) {
   }
 }
 
-function configureDefaultStreamProcessingIfNotConfigured(context) {
+function configureDefaultKinesisStreamProcessingIfNotConfigured(context) {
   // Configure default stream processing if not already configured
   if (!streamProcessing.isStreamProcessingConfigured(context)) {
-    context.warn(`Stream processing was not configured yet - using default stream processing configuration`);
-    streamProcessing.configureDefaultStreamProcessing(context, true);
+    context.warn(`Kinesis stream processing was not configured yet - using default Kinesis stream processing configuration`);
+    streamProcessing.configureDefaultKinesisStreamProcessing(context, true);
   }
   // Validate that stream processing is configured correctly
   streamProcessing.validateStreamProcessingConfiguration(context);

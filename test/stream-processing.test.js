@@ -13,8 +13,8 @@ const streamProcessing = require('../stream-processing');
 const isStreamProcessingConfigured = streamProcessing.isStreamProcessingConfigured;
 
 const configureStreamProcessing = streamProcessing.configureStreamProcessing;
-const configureDefaultStreamProcessing = streamProcessing.configureDefaultStreamProcessing;
-const getDefaultStreamProcessingSettings = streamProcessing.getDefaultStreamProcessingSettings;
+const configureDefaultKinesisStreamProcessing = streamProcessing.configureDefaultKinesisStreamProcessing;
+const getDefaultKinesisStreamProcessingSettings = streamProcessing.getDefaultKinesisStreamProcessingSettings;
 
 const getStreamProcessingSetting = streamProcessing.getStreamProcessingSetting;
 const getStreamProcessingFunction = streamProcessing.getStreamProcessingFunction;
@@ -152,7 +152,7 @@ test('isStreamProcessingConfigured', t => {
   const context = {};
   t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.ok(isStreamProcessingConfigured(context), `Stream processing must be configured now`);
 
@@ -203,10 +203,10 @@ test('configureStreamProcessing', t => {
 });
 
 // =====================================================================================================================
-// configureDefaultStreamProcessing
+// configureDefaultKinesisStreamProcessing
 // =====================================================================================================================
 
-test('configureDefaultStreamProcessing', t => {
+test('configureDefaultKinesisStreamProcessing', t => {
   // Set up region
   regions.ONLY_FOR_TESTING.setRegionIfNotSet('us-west-1');
   const region = regions.getRegion();
@@ -221,7 +221,7 @@ test('configureDefaultStreamProcessing', t => {
 
     const before = context.streamProcessing;
 
-    const c = configureDefaultStreamProcessing(context, forceConfiguration);
+    const c = configureDefaultKinesisStreamProcessing(context, forceConfiguration);
 
     t.ok(c === context, `Context (${c}) returned must be given context`);
     t.ok(isStreamProcessingConfigured(context), `Default stream processing must be configured now`);
@@ -255,7 +255,7 @@ test('configureDefaultStreamProcessing', t => {
   t.notOk(isStreamProcessingConfigured(context), `Default stream processing must NOT be configured yet`);
 
   // Configure defaults for the first time
-  const defaultSettings = getDefaultStreamProcessingSettings(config.streamProcessingSettings);
+  const defaultSettings = getDefaultKinesisStreamProcessingSettings(config.kinesisStreamProcessingSettings);
 
   check(context, defaultSettings.streamType, defaultSettings.taskTrackingName, defaultSettings.timeoutAtPercentageOfRemainingTime,
     defaultSettings.maxNumberOfAttempts, extractJsonMessageFromKinesisRecord, discardUnusableRecordsToDRQ,
@@ -290,9 +290,9 @@ test('getStreamProcessingSetting and getStreamProcessingFunction', t => {
   const config = require('../config.json');
 
   // Configure default stream processing settings
-  configureDefaultStreamProcessing(context);
+  configureDefaultKinesisStreamProcessing(context);
 
-  const defaultSettings = getDefaultStreamProcessingSettings(config.streamProcessingSettings);
+  const defaultSettings = getDefaultKinesisStreamProcessingSettings(config.kinesisStreamProcessingSettings);
 
   equal(t, getStreamProcessingSetting(context, STREAM_TYPE_SETTING), defaultSettings.streamType, 'streamType setting');
   equal(t, getStreamProcessingSetting(context, TASK_TRACKING_NAME_SETTING), defaultSettings.taskTrackingName, 'taskTrackingName setting');
@@ -322,7 +322,7 @@ test('getStreamProcessingSetting and getStreamProcessingFunction', t => {
 test('extractJsonMessageFromKinesisRecord', t => {
   const context = {};
   logging.configureDefaultLogging(context);
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
@@ -359,7 +359,7 @@ test('discardUnusableRecordsToDRQ with 0 records', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(1);
   discardUnusableRecordsToDRQ([], context)
@@ -385,7 +385,7 @@ test('discardUnusableRecordsToDRQ with 1 record', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(2);
   discardUnusableRecordsToDRQ([record], context)
@@ -413,7 +413,7 @@ test('discardUnusableRecordsToDRQ with 2 records', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(3);
   discardUnusableRecordsToDRQ(records, context)
@@ -440,7 +440,7 @@ test('discardUnusableRecordsToDRQ with 1 record and failure', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(2);
   discardUnusableRecordsToDRQ([record], context)
@@ -470,7 +470,7 @@ test('discardRejectedMessagesToDMQ with 0 messages', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(1);
   discardRejectedMessagesToDMQ([], context)
@@ -498,7 +498,7 @@ test('discardRejectedMessagesToDMQ with 1 message', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(2);
   discardRejectedMessagesToDMQ([message], context)
@@ -532,7 +532,7 @@ test('discardRejectedMessagesToDMQ with 2 messages', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(3);
   discardRejectedMessagesToDMQ(messages, context)
@@ -561,7 +561,7 @@ test('discardRejectedMessagesToDMQ with 1 record and failure', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(2);
   discardRejectedMessagesToDMQ([message], context)
@@ -593,7 +593,7 @@ test('resubmitIncompleteMessagesToKinesis with 0 messages', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(1);
   resubmitIncompleteMessagesToKinesis([], streamName, context)
@@ -622,7 +622,7 @@ test('resubmitIncompleteMessagesToKinesis with 1 message', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(2);
   resubmitIncompleteMessagesToKinesis([message], streamName, context)
@@ -657,7 +657,7 @@ test('resubmitIncompleteMessagesToKinesis with 2 messages', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(3);
   resubmitIncompleteMessagesToKinesis(messages, streamName, context)
@@ -687,7 +687,7 @@ test('resubmitIncompleteMessagesToKinesis with 1 record and failure', t => {
   stages.configureDefaultStageHandling(context, false);
   stages.configureStage(context, event, awsContext, true);
 
-  configureDefaultStreamProcessing(context, true);
+  configureDefaultKinesisStreamProcessing(context, true);
 
   t.plan(2);
   resubmitIncompleteMessagesToKinesis([message], streamName, context)

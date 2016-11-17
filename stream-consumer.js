@@ -1,8 +1,6 @@
 'use strict';
 
 const regions = require('aws-core-utils/regions');
-// Get the current AWS region
-const region = regions.getRegion();
 
 const streamEvents = require('aws-core-utils/stream-events');
 
@@ -324,7 +322,13 @@ function processStreamEventRecords(records, processOneTaskDefs, processAllTaskDe
  */
 function processStreamEventRecord(record, processOneTaskDefs, context) {
   try {
-    streamEvents.validateStreamEventRecord(record);
+    if (streamProcessing.isKinesisStreamType(context)) {
+      streamEvents.validateKinesisStreamEventRecord(record);
+    } else if (streamProcessing.isDynamoDBStreamType(context)) {
+      streamEvents.validateDynamoDBStreamEventRecord(record);
+    } else {
+      streamEvents.validateStreamEventRecord(record);
+    }
   } catch (err) {
     context.error(err.message, err.stack);
     // Record is not a valid Kinesis or DynamoDB stream event record, so return no message, no promises and the unusable record

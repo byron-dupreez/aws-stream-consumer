@@ -1,9 +1,8 @@
 {
-  "streamProcessingSettings": {
+  "kinesisStreamProcessingSettings": {
     "streamType": "kinesis",
     "taskTrackingName": "taskTracking",
     "timeoutAtPercentageOfRemainingTime": 0.9,
-    "computeChecksums": true,
     "maxNumberOfAttempts": 10,
     "deadRecordQueueName": "DeadRecordQueue",
     "deadMessageQueueName": "DeadMessageQueue"

@@ -38,9 +38,9 @@ module.exports = {
   isStreamProcessingConfigured: isStreamProcessingConfigured,
 
   configureStreamProcessing: configureStreamProcessing,
-  configureDefaultStreamProcessing: configureDefaultStreamProcessing,
+  configureDefaultKinesisStreamProcessing: configureDefaultKinesisStreamProcessing,
   validateStreamProcessingConfiguration: validateStreamProcessingConfiguration,
-  getDefaultStreamProcessingSettings: getDefaultStreamProcessingSettings,
+  getDefaultKinesisStreamProcessingSettings: getDefaultKinesisStreamProcessingSettings,
 
   // Accessors for stream processing settings and functions
   getStreamProcessingSetting: getStreamProcessingSetting,
@@ -198,10 +198,10 @@ function configureKinesisIfNotConfigured(context, kinesisOptions) {
 }
 
 /**
- * Configures the given context with the default stream processing settings, but only if stream processing is NOT
- * already configured on the given context OR if forceConfiguration is true.
+ * Configures the given context with the default Kinesis stream processing settings, but only if stream processing is
+ * NOT already configured on the given context OR if forceConfiguration is true.
  *
- * Default stream processing assumes the following:
+ * Default Kinesis stream processing assumes the following:
  * - The stream event record is a Kinesis record
  * - The message is a JSON object serialized in base 64 format within the Kinesis record's data property
  * - See {@linkcode streamProcessing#extractMessageFromKinesisRecord} for the default extractMessageFromRecord
@@ -215,9 +215,9 @@ function configureKinesisIfNotConfigured(context, kinesisOptions) {
  * @param {Object} context - the context onto which to configure the default stream processing settings
  * @param {boolean|undefined} forceConfiguration - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
- * @return {Object} the context object configured with stream processing settings (either existing or defaults)
+ * @return {Object} the context object configured with Kinesis stream processing settings (either existing or defaults)
  */
-function configureDefaultStreamProcessing(context, forceConfiguration) {
+function configureDefaultKinesisStreamProcessing(context, forceConfiguration) {
   // If forceConfiguration is false check if the given context already has stream processing configured on it
   // and, if so, do nothing more and simply return the context as is (to prevent overriding an earlier configuration)
   if (!forceConfiguration && isStreamProcessingConfigured(context)) {
@@ -229,8 +229,8 @@ function configureDefaultStreamProcessing(context, forceConfiguration) {
   // Configure default logging from local config if not configured yet
   configureLoggingIfNotConfigured(context, config.logging);
 
-  // Get the default stream processing settings from the local config file
-  const defaultSettings = getDefaultStreamProcessingSettings(config.streamProcessingSettings);
+  // Get the default Kinesis stream processing settings from the local config file
+  const defaultSettings = getDefaultKinesisStreamProcessingSettings(config.kinesisStreamProcessingSettings);
 
   // Configure the context with the default stream processing settings defined above
   configureStreamProcessing(context, defaultSettings, forceConfiguration);
@@ -243,21 +243,22 @@ function configureDefaultStreamProcessing(context, forceConfiguration) {
 }
 
 /**
- * Simply returns the default stream processing settings, preferring settings in the given config object (if any) or in
- * config.streamProcessingSettings (if any) over the static default settings.
+ * Simply returns the default Kinesis stream processing settings, preferring settings in the given config object (if
+ * any) or in config.kinesisStreamProcessingSettings (if any) over the static default settings.
  *
- * This function is used internally by {@linkcode configureDefaultStreamProcessing}, but could also be used in custom
- * configurations to get the default settings as a base and override with your customisations before calling
+ * This function is used internally by {@linkcode configureDefaultKinesisStreamProcessing}, but could also be used in
+ * custom configurations to get the default settings as a base and override with your customisations before calling
  * {@linkcode configureStreamProcessing}.
  *
- * @param {Object} [config] - an optional config object containing either stream processing settings or a streamProcessingSettings object
- * @param {Object} [config.streamProcessingSettings] - an optional streamProcessingSettings object on the given config
- * object containing stream processing settings
+ * @param {Object} [config] - an optional config object containing either stream processing settings or a
+ * kinesisStreamProcessingSettings object
+ * @param {Object} [config.kinesisStreamProcessingSettings] - an optional kinesisStreamProcessingSettings object on the
+ * given config object containing stream processing settings
  * @returns {StreamProcessingSettings} a stream processing settings object
  */
-function getDefaultStreamProcessingSettings(config) {
-  if (config && config.streamProcessingSettings) {
-    return getDefaultStreamProcessingSettings(config.streamProcessingSettings);
+function getDefaultKinesisStreamProcessingSettings(config) {
+  if (config && config.kinesisStreamProcessingSettings) {
+    return getDefaultKinesisStreamProcessingSettings(config.kinesisStreamProcessingSettings);
   }
 
   function select(config, propertyName, defaultValue) {

@@ -215,7 +215,7 @@ function configureDefaults(context) {
   stages.configureDefaultStageHandling(context);
   const config = require('../config.json');
   kinesisUtils.configureKinesis(context, config.kinesisOptions);
-  streamProcessing.configureDefaultStreamProcessing(context);
+  streamProcessing.configureDefaultKinesisStreamProcessing(context);
 }
 
 test('configureStreamConsumer with perfect conditions', t => {

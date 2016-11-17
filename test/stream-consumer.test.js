@@ -87,7 +87,7 @@ function configureDefaults(t, context, kinesisError) {
   stages.configureDefaultStageHandling(context);
   context.kinesis = dummyKinesis(t, 'Stream consumer', kinesisError);
   //kinesisUtils.configureKinesis(context, config.kinesisOptions);
-  streamProcessing.configureDefaultStreamProcessing(context);
+  streamProcessing.configureDefaultKinesisStreamProcessing(context);
 }
 
 function dummyKinesis(t, prefix, error) {
