@@ -20,7 +20,7 @@ const streamProcessing = require('./stream-processing');
 
 const regions = require('aws-core-utils/regions');
 const stages = require('aws-core-utils/stages');
-const arns = require('aws-core-utils/arns');
+// const arns = require('aws-core-utils/arns');
 const streamEvents = require('aws-core-utils/stream-events');
 //const kinesisUtils = require('aws-core-utils/kinesis-utils');
 
@@ -32,7 +32,7 @@ const stringify = Strings.stringify;
 
 const Arrays = require('core-functions/arrays');
 
-const logging = require('logging-utils/logging-utils');
+const logging = require('logging-utils');
 
 // =====================================================================================================================
 // Consumer configuration - configures the runtime settings for a stream consumer on a given context from a given AWS event and AWS context
@@ -56,29 +56,28 @@ function isStreamConsumerConfigured(context) {
  * trigger a replay of all the records in the current batch until the Lambda can be fixed.
  *
  * @param {Object} context - the context onto which to configure a stream consumer's runtime settings
+ * @param {Object|undefined} [settings] - optional configuration settings to use
+ * @param {LoggingSettings|undefined} [settings.loggingSettings] - optional logging settings to use to configure logging
+ * @param {StageHandlingSettings|undefined} [settings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
+ * @param {StreamProcessingSettings|undefined} [settings.streamProcessingSettings] - optional stream processing settings to use to configure stream processing
+ * @param {Object} options - configuration options to use if no corresponding settings are provided
+ * @param {LoggingOptions|undefined} [options.loggingOptions] - optional logging options to use to configure logging
+ * @param {StageHandlingOptions|undefined} [options.stageHandlingOptions] - optional stage handling options to use to configure stage handling
+ * @param {StreamProcessingOptions|undefined} [options.streamProcessingOptions] - optional stream processing options to use to configure stream processing
+ * @param {Object|undefined} [options.kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
  * @param {Object} event - the AWS event, which was passed to your lambda
  * @param {Object} awsContext - the AWS context, which was passed to your lambda
  * @throws {Error} an error if the region, stage and/or source stream name cannot be resolved
  * @return {Object} the context object configured with a stream consumer's runtime settings
  */
-function configureStreamConsumer(context, event, awsContext) {
-  const config = require('./config.json');
+function configureStreamConsumer(context, settings, options, event, awsContext) {
 
-  // Configure default logging from local config if not configured yet
-  configureLoggingIfNotConfigured(context, config.logging);
-
-  // Configure stage handling if not configured yet
-  configureDefaultStageHandlingIfNotConfigured(context, 'configureStreamConsumer');
+  // Configure stream processing (plus logging, stage handling & kinesis) if not configured yet
+  streamProcessing.configureStreamProcessingIfNotConfigured(context, settings ? settings.streamProcessingSettings : undefined,
+    options ? options.streamProcessingOptions : undefined, settings, options, configureStreamConsumer.name);
 
   // Configure region, stage & AWS context
   configureRegionStageAndAwsContext(context, event, awsContext);
-
-  // Configure stream processing if not configured yet
-  configureDefaultKinesisStreamProcessingIfNotConfigured(context);
-
-  if (!context.streamConsumer) {
-    context.streamConsumer = {};
-  }
 
   // Resolve the name of the source stream from which the AWS event was received and to which any incomplete messages
   // must be resubmitted
@@ -95,13 +94,12 @@ function getStreamConsumerSetting(context, settingName) {
   return context && context.streamConsumer && isNotBlank(settingName) ? context.streamConsumer[settingName] : undefined;
 }
 
-function configureLoggingIfNotConfigured(context, config) {
-  if (!logging.isLoggingConfigured(context)) {
-    logging.configureLoggingFromConfig(context, config);
-    context.warn(`Logging was not configured yet - used default logging configuration from aws-stream-consumer/config.json`);
-  }
-}
-
+/**
+ * Configures the given context with the current region, the resolved stage and the given AWS context.
+ * @param {Object} context - the context to configure
+ * @param {Object} event - the AWS event, which was passed to your lambda
+ * @param {Object} awsContext - the AWS context, which was passed to your lambda
+ */
 function configureRegionStageAndAwsContext(context, event, awsContext) {
   // Configure context.awsContext with the given AWS context, if not already configured
   if (!context.awsContext) {
@@ -115,27 +113,7 @@ function configureRegionStageAndAwsContext(context, event, awsContext) {
   stages.configureStage(context, event, awsContext, true);
 
   context.info(`Using region (${context.region}) and stage (${context.stage})`);
-}
-
-/**
- * If no stage handling settings have been configured yet, then configure the given context with the default settings.
- */
-function configureDefaultStageHandlingIfNotConfigured(context, caller) {
-  // Configure stage handling if not already configured
-  if (!stages.isStageHandlingConfigured(context)) {
-    context.warn(`Stage handling was not configured before calling ${caller} - using default stage handling configuration`);
-    stages.configureDefaultStageHandling(context, true);
-  }
-}
-
-function configureDefaultKinesisStreamProcessingIfNotConfigured(context) {
-  // Configure default stream processing if not already configured
-  if (!streamProcessing.isStreamProcessingConfigured(context)) {
-    context.warn(`Kinesis stream processing was not configured yet - using default Kinesis stream processing configuration`);
-    streamProcessing.configureDefaultKinesisStreamProcessing(context, true);
-  }
-  // Validate that stream processing is configured correctly
-  streamProcessing.validateStreamProcessingConfiguration(context);
+  return context;
 }
 
 /**
@@ -146,6 +124,9 @@ function configureDefaultKinesisStreamProcessingIfNotConfigured(context) {
  * @returns {Object} the given context
  */
 function configureResubmitStreamName(context, event) {
+  if (!context.streamConsumer) {
+    context.streamConsumer = {};
+  }
   if (isBlank(context.streamConsumer.resubmitStreamName)) {
     // Resolve the source Kinesis stream's ARN (or stream name only?)
     //const eventSourceARNs = streamEvents.getEventSourceARNs(event);

@@ -19,7 +19,7 @@ const stringify = strings.stringify;
 
 const Numbers = require('core-functions/numbers');
 
-const prefixFnArgs = require('./config.json').prefixFnArgs;
+const prefixFnArgs = require('./testing-config.json').prefixFnArgs;
 
 function toPrefix(prefix) {
   return prefix ? prefix.endsWith(' ') ? prefix : prefix + ' ' : '';

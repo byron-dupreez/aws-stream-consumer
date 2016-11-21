@@ -85,7 +85,7 @@ test('isStreamConsumerConfigured', t => {
   configureDefaults(context);
 
   // Now configure the stream consumer runtime settings
-  configureStreamConsumer(context, event, awsContext);
+  configureStreamConsumer(context, undefined, undefined, event, awsContext);
 
   // Must be configured now
   t.ok(isStreamConsumerConfigured(context), `stream consumer must be configured`);
@@ -114,7 +114,7 @@ test('configureStreamConsumer must fail if missing region', t => {
   configureDefaults(context);
 
   try {
-    configureStreamConsumer(context, event, awsContext);
+    configureStreamConsumer(context, undefined, undefined, event, awsContext);
     t.fail(`configureStreamConsumer should NOT have passed`);
 
   } catch (err) {
@@ -142,7 +142,7 @@ test('configureStreamConsumer must fail if missing stage', t => {
   configureDefaults(context);
 
   try {
-    configureStreamConsumer(context, event, awsContext);
+    configureStreamConsumer(context, undefined, undefined, event, awsContext);
     t.fail(`configureStreamConsumer should NOT have passed`);
 
   } catch (err) {
@@ -170,7 +170,7 @@ test('configureStreamConsumer must fail if missing resubmitStreamName', t => {
   configureDefaults(context);
 
   try {
-    configureStreamConsumer(context, event, awsContext);
+    configureStreamConsumer(context, undefined, undefined, event, awsContext);
     t.fail(`configureStreamConsumer should NOT have passed`);
 
   } catch (err) {
@@ -198,7 +198,7 @@ test('configureStreamConsumer must fail if too many, non-distinct source stream 
   configureDefaults(context);
 
   try {
-    configureStreamConsumer(context, event, awsContext);
+    configureStreamConsumer(context, undefined, undefined, event, awsContext);
     t.fail(`configureStreamConsumer should NOT have passed`);
 
   } catch (err) {
@@ -213,8 +213,8 @@ test('configureStreamConsumer must fail if too many, non-distinct source stream 
 function configureDefaults(context) {
   logging.configureDefaultLogging(context);
   stages.configureDefaultStageHandling(context);
-  const config = require('../config.json');
-  kinesisUtils.configureKinesis(context, config.kinesisOptions);
+  const options = require('../config-kinesis.json');
+  kinesisUtils.configureKinesis(context, options.kinesisOptions);
   streamProcessing.configureDefaultKinesisStreamProcessing(context);
 }
 
@@ -223,7 +223,7 @@ test('configureStreamConsumer with perfect conditions', t => {
 
   // Simulate a region in AWS_REGION for testing
   const region = setupRegion('us-west-2');
-  const config = require('../config.json');
+  const options = require('../config-kinesis.json');
 
   // Generate a sample AWS event
   const streamName = 'TestStream_DEV2';
@@ -236,7 +236,7 @@ test('configureStreamConsumer with perfect conditions', t => {
   configureDefaults(context);
 
   try {
-    configureStreamConsumer(context, event, awsContext);
+    configureStreamConsumer(context, undefined, undefined, event, awsContext);
     t.pass(`configureStreamConsumer should have passed`);
 
     equal(t, context.region, region, 'context.region');
@@ -246,7 +246,7 @@ test('configureStreamConsumer with perfect conditions', t => {
 
     t.ok(context.kinesis, 'context.kinesis must be configured');
     equal(t, context.kinesis.config.region, region, 'context.kinesis.config.region');
-    equal(t, context.kinesis.config.maxRetries, config.kinesisOptions.maxRetries, 'context.kinesis.config.maxRetries');
+    equal(t, context.kinesis.config.maxRetries, options.kinesisOptions.maxRetries, 'context.kinesis.config.maxRetries');
 
   } catch (err) {
     t.fail(`configureStreamConsumer should NOT have failed (${err})`);
@@ -263,7 +263,7 @@ test('getStreamConsumerSetting', t => {
   const context = {};
 
   // Simulate a region in AWS_REGION for testing
-  const region = setupRegion('us-west-2');
+  setupRegion('us-west-2');
 
   // Generate a sample AWS event
   const streamName = 'TestStream_DEV2';
@@ -275,7 +275,7 @@ test('getStreamConsumerSetting', t => {
   // Simulate perfect conditions - everything meant to be configured beforehand has been configured as well
   configureDefaults(context);
 
-  configureStreamConsumer(context, event, awsContext);
+  configureStreamConsumer(context, undefined, undefined, event, awsContext);
 
   equal(t, getStreamConsumerSetting(context, 'resubmitStreamName'), streamName, 'resubmitStreamName setting');
 

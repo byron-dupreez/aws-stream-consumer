@@ -1,0 +1,27 @@
+{
+  "loggingOptions": {
+    "logLevel": "trace",
+    "useLevelPrefixes": true,
+    "useConsoleTrace": false
+  },
+
+  "stageHandlingOptions": {
+    "streamNameStageSeparator": "_",
+    "resourceNameStageSeparator": "_",
+    "extractInCase": "lower",
+    "injectInCase": "upper"
+  },
+
+  "kinesisOptions": {
+    "maxRetries": 0
+  },
+
+  "streamProcessingOptions": {
+    "streamType": "kinesis",
+    "taskTrackingName": "taskTracking",
+    "timeoutAtPercentageOfRemainingTime": 0.9,
+    "maxNumberOfAttempts": 10,
+    "deadRecordQueueName": "DeadRecordQueue",
+    "deadMessageQueueName": "DeadMessageQueue"
+  }
+}

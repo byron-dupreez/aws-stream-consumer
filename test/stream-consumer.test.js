@@ -33,7 +33,7 @@ const taskUtils = require('task-utils/task-utils');
 const regions = require("aws-core-utils/regions");
 const stages = require("aws-core-utils/stages");
 //const streamEvents = require("aws-core-utils/stream-events");
-const kinesisUtils = require("aws-core-utils/kinesis-utils");
+// const kinesisUtils = require("aws-core-utils/kinesis-utils");
 
 require("core-functions/promises");
 
@@ -65,14 +65,14 @@ function sampleKinesisEvent(streamName, partitionKey, data, omitEventSourceARN) 
   return samples.sampleKinesisEventWithSampleRecord(partitionKey, data, eventSourceArn, region);
 }
 
-function sampleKinesisEventWithRecords(streamNames, partitionKey, data) {
-  const region = process.env.AWS_REGION;
-  const records = streamNames.map(streamName => {
-    const eventSourceArn = samples.sampleEventSourceArn(region, streamName);
-    return samples.sampleKinesisRecord(partitionKey, data, eventSourceArn, region);
-  });
-  return samples.sampleKinesisEventWithRecords(records);
-}
+// function sampleKinesisEventWithRecords(streamNames, partitionKey, data) {
+//   const region = process.env.AWS_REGION;
+//   const records = streamNames.map(streamName => {
+//     const eventSourceArn = samples.sampleEventSourceArn(region, streamName);
+//     return samples.sampleKinesisRecord(partitionKey, data, eventSourceArn, region);
+//   });
+//   return samples.sampleKinesisEventWithRecords(records);
+// }
 
 function sampleAwsContext(functionVersion, functionAlias, maxTimeInMillis) {
   const region = process.env.AWS_REGION;
@@ -82,12 +82,12 @@ function sampleAwsContext(functionVersion, functionAlias, maxTimeInMillis) {
 }
 
 function configureDefaults(t, context, kinesisError) {
-  const config = require('../config.json');
-  logging.configureLoggingFromConfig(context, config.logging);
-  stages.configureDefaultStageHandling(context);
+  const options = require('../config-kinesis.json');
+  logging.configureDefaultLogging(context, options.loggingOptions);
+  stages.configureDefaultStageHandling(context, options.stageHandlingOptions);
   context.kinesis = dummyKinesis(t, 'Stream consumer', kinesisError);
   //kinesisUtils.configureKinesis(context, config.kinesisOptions);
-  streamProcessing.configureDefaultKinesisStreamProcessing(context);
+  streamProcessing.configureDefaultKinesisStreamProcessing(context, options.streamProcessingOptions);
 }
 
 function dummyKinesis(t, prefix, error) {
@@ -175,21 +175,21 @@ function sampleExecuteOneAsync(ms, mustRejectWithError, callback) {
   return executeOneAsync;
 }
 
-function sampleExecuteOneSync(mustSucceed) {
-  function executeOneSync(message, context) {
-    if (mustSucceed) {
-      context.info(`${executeOneSync.name} completed message (${stringify(message)})`);
-      return message;
-    } else {
-      const errMsg = `${executeOneSync.name} failed intentionally on message (${stringify(message)})`;
-      const err = new Error(errMsg);
-      context.error(errMsg, err.stack);
-      throw err;
-    }
-  }
-
-  return executeOneSync;
-}
+// function sampleExecuteOneSync(mustSucceed) {
+//   function executeOneSync(message, context) {
+//     if (mustSucceed) {
+//       context.info(`${executeOneSync.name} completed message (${stringify(message)})`);
+//       return message;
+//     } else {
+//       const errMsg = `${executeOneSync.name} failed intentionally on message (${stringify(message)})`;
+//       const err = new Error(errMsg);
+//       context.error(errMsg, err.stack);
+//       throw err;
+//     }
+//   }
+//
+//   return executeOneSync;
+// }
 
 function sampleExecuteAllAsync(ms, mustRejectWithError, callback) {
   function executeAllAsync(messages, context) {
@@ -229,21 +229,21 @@ function sampleExecuteAllAsync(ms, mustRejectWithError, callback) {
   return executeAllAsync;
 }
 
-function sampleExecuteAllSync(mustSucceed) {
-  function executeAllSync(messages, context) {
-    if (mustSucceed) {
-      context.info(`${executeAllSync.name} completed messages (${stringify(messages)})`);
-      return messages;
-    } else {
-      const errMsg = `${executeAllSync.name} failed intentionally on messages (${stringify(messages)})`;
-      const err = new Error(errMsg);
-      context.error(errMsg, err.stack);
-      throw err;
-    }
-  }
-
-  return executeAllSync;
-}
+// function sampleExecuteAllSync(mustSucceed) {
+//   function executeAllSync(messages, context) {
+//     if (mustSucceed) {
+//       context.info(`${executeAllSync.name} completed messages (${stringify(messages)})`);
+//       return messages;
+//     } else {
+//       const errMsg = `${executeAllSync.name} failed intentionally on messages (${stringify(messages)})`;
+//       const err = new Error(errMsg);
+//       context.error(errMsg, err.stack);
+//       throw err;
+//     }
+//   }
+//
+//   return executeAllSync;
+// }
 
 // =====================================================================================================================
 // validateTaskDefinitions
@@ -424,7 +424,7 @@ test('processStreamEvent with 1 message that succeeds all tasks', t => {
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -497,7 +497,7 @@ test('processStreamEvent with 1 message that succeeds all tasks (despite broken 
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -572,7 +572,7 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -648,7 +648,7 @@ test('processStreamEvent with 1 unusable record', t => {
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -717,7 +717,7 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -819,7 +819,7 @@ test('processStreamEvent with 1 message that fails its processOne task, resubmit
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -892,7 +892,7 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -993,7 +993,7 @@ test('processStreamEvent with 1 message that fails its processAll task, resubmit
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1066,7 +1066,7 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1185,7 +1185,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1264,7 +1264,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1370,7 +1370,7 @@ test('processStreamEvent with 1 message that rejects - must discard rejected mes
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1449,7 +1449,7 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1589,7 +1589,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1696,7 +1696,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1829,7 +1829,7 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1907,7 +1907,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must resu
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1977,7 +1977,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {

@@ -18,15 +18,6 @@ const DEAD_MESSAGE_QUEUE_NAME_SETTING = 'deadMessageQueueName';
 const KINESIS_STREAM_TYPE = "kinesis";
 const DYNAMODB_STREAM_TYPE = "dynamodb";
 
-// Defaults
-const defaultStreamType = KINESIS_STREAM_TYPE;
-const defaultTaskTrackingName = 'taskTracking';
-const defaultTimeoutAtPercentageOfRemainingTime = 0.9;
-const defaultMaxNumberOfAttempts = 10;
-
-const defaultDeadRecordQueueName = 'DeadRecordQueue';
-const defaultDeadMessageQueueName = 'DeadMessageQueue';
-
 /**
  * Utilities for configuring stream processing, which configures and determines the processing behaviour of a stream
  * consumer.
@@ -41,6 +32,8 @@ module.exports = {
   configureDefaultKinesisStreamProcessing: configureDefaultKinesisStreamProcessing,
   validateStreamProcessingConfiguration: validateStreamProcessingConfiguration,
   getDefaultKinesisStreamProcessingSettings: getDefaultKinesisStreamProcessingSettings,
+
+  configureStreamProcessingIfNotConfigured: configureStreamProcessingIfNotConfigured,
 
   // Accessors for stream processing settings and functions
   getStreamProcessingSetting: getStreamProcessingSetting,
@@ -104,9 +97,9 @@ const Strings = require('core-functions/strings');
 //const isBlank = Strings.isBlank;
 const isNotBlank = Strings.isNotBlank;
 const trim = Strings.trim;
-// const stringify = Strings.stringify;
+const stringify = Strings.stringify;
 
-const logging = require('logging-utils/logging-utils');
+const logging = require('logging-utils');
 
 // =====================================================================================================================
 // Stream processing configuration - configures and determines the processing behaviour of a stream consumer
@@ -118,7 +111,7 @@ const logging = require('logging-utils/logging-utils');
  * @returns {boolean} true if configured; false otherwise
  */
 function isStreamProcessingConfigured(context) {
-  return context && typeof context.streamProcessing === 'object';
+  return context && typeof context === 'object' && context.streamProcessing && typeof context.streamProcessing === 'object';
 }
 
 /**
@@ -150,29 +143,50 @@ function isStreamProcessingConfigured(context) {
  */
 
 /**
+ * Stream processing options which configure ONLY the property (i.e. non-function) settings of an AWS stream consumer
+ * and are a subset of the full StreamProcessingSettings.
+ * @typedef {Object} StreamProcessingOptions
+ * @property {string} streamType - the type of stream being processed - valid values are "kinesis" or "dynamodb"
+ * @property {string} taskTrackingName - the name of the task tracking object property on each message, which has or
+ * will be assigned two properties: a 'ones' object property; and an 'alls' object property. The 'ones' property is a
+ * map of all of the processOne tasks (i.e. the tasks for processing a single message at a time) keyed by task name.
+ * The 'alls' property is a map of all of the processAll tasks (i.e. the tasks for processing all of the messages that
+ * were received in a batch from an AWS stream) keyed by task name
+ * @property {number} timeoutAtPercentageOfRemainingTime - the percentage of the remaining time at which to timeout
+ * processing (expressed as a number between 0.0 and 1.0, e.g. 0.9 would mean timeout at 90% of the remaining time)
+ * @property {number} maxNumberOfAttempts - the maximum number of attempts on each of a message's tasks that are allowed
+ * before discarding the message and routing it to the Dead Message Queue. Note that if a message has multiple tasks, it
+ * will only be discarded when all of its tasks have reached this maximum
+ * @property {string} deadRecordQueueName - the unqualified stream name of the Dead Record Queue to which to discard unusable records
+ * @property {string} deadMessageQueueName - the unqualified stream name of the Dead Message Queue to which to discard rejected messages
+ */
+
+/**
  * Configures the given context with the given stream processing settings, but only if stream processing is not
  * already configured on the given context OR if forceConfiguration is true.
  *
  * @param {Object} context - the context onto which to configure the given stream processing settings
  * @param {StreamProcessingSettings} settings - the stream processing settings to use
+ * @param {Object|undefined} [otherSettings] - optional other configuration settings to use
+ * @param {LoggingSettings|undefined} [otherSettings.loggingSettings] - optional logging settings to use to configure logging
+ * @param {StageHandlingSettings|undefined} [otherSettings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
+ * @param {Object|undefined} [otherOptions] - optional other configuration options to use if no corresponding other settings are provided
+ * @param {LoggingOptions|undefined} [otherOptions.loggingOptions] - optional logging options to use to configure logging
+ * @param {StageHandlingOptions|undefined} [otherOptions.stageHandlingOptions] - optional stage handling options to use to configure stage handling
+ * @param {Object|undefined} [otherOptions.kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
  * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
  * @return {Object} the context object configured with stream processing (either existing or new)
  */
-function configureStreamProcessing(context, settings, forceConfiguration) {
+function configureStreamProcessing(context, settings, otherSettings, otherOptions, forceConfiguration) {
+  // Configure all dependencies if not configured
+  configureDependenciesIfNotConfigured(context, otherSettings, otherOptions, configureStreamProcessing.name);
 
   // If forceConfiguration is false check if the given context already has stream processing configured on it
   // and, if so, do nothing more and simply return the context as is (to prevent overriding an earlier configuration)
   if (!forceConfiguration && isStreamProcessingConfigured(context)) {
     return context;
   }
-
-  // Configure default logging from local config if not configured yet
-  const config = require('./config.json');
-  configureLoggingIfNotConfigured(context, config.logging);
-
-  // Validate the given stream type
-  // validateStreamType(settings.streamType);
 
   // Configure stream processing with the given settings
   context.streamProcessing = settings;
@@ -191,10 +205,42 @@ function configureStreamProcessing(context, settings, forceConfiguration) {
  */
 function configureKinesisIfNotConfigured(context, kinesisOptions) {
   if (!context.kinesis) {
-    context.warn(`An AWS Kinesis instance has not been configured on context.kinesis yet - configuring an AWS Kinesis instance with default settings from aws-stream-consumer/config.json. Preferably configure this beforehand, using aws-core-utils/kinesis-utils#configureKinesis`);
     // Configure a default Kinesis instance on context.kinesis if not already configured, which is needed by 3 of the above functions
+    if (!kinesisOptions) {
+      const config = require('./config-kinesis.json');
+      kinesisOptions = config.kinesisOptions;
+    }
+    context.warn(`An AWS Kinesis instance has not been configured on context.kinesis yet - configuring an AWS Kinesis instance with options (${stringify(kinesisOptions)}). Preferably configure this beforehand, using aws-core-utils/kinesis-utils#configureKinesis`);
     kinesisUtils.configureKinesis(context, kinesisOptions);
   }
+}
+
+/**
+ * Configures the given context with the stream processing dependencies (currently logging, stage handling and kinesis)
+ * using the given other settings and given other options.
+ *
+ * @param {Object} context - the context onto which to configure the given stream processing dependencies
+ * @param {Object|undefined} [otherSettings] - optional other configuration settings to use
+ * @param {LoggingSettings|undefined} [otherSettings.loggingSettings] - optional logging settings to use to configure logging
+ * @param {StageHandlingSettings|undefined} [otherSettings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
+ * @param {Object|undefined} [otherOptions] - optional other configuration options to use if no corresponding other settings are provided
+ * @param {LoggingOptions|undefined} [otherOptions.loggingOptions] - optional logging options to use to configure logging
+ * @param {StageHandlingOptions|undefined} [otherOptions.stageHandlingOptions] - optional stage handling options to use to configure stage handling
+ * @param {Object|undefined} [otherOptions.kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
+ * @param {string|undefined} [caller] - optional arbitrary text to identify the caller of this function
+ * @returns {Object} the context object configured with stream processing dependencies
+ */
+function configureDependenciesIfNotConfigured(context, otherSettings, otherOptions, caller) {
+  // Configure logging if not configured yet
+  logging.configureLoggingIfNotConfigured(context, otherSettings ? otherSettings.loggingSettings : undefined,
+    otherOptions ? otherOptions.loggingOptions : undefined, undefined, caller);
+
+  // Configure stage handling if not configured yet
+  stages.configureStageHandlingIfNotConfigured(context, otherSettings ? otherSettings.stageHandlingSettings : undefined,
+    otherOptions ? otherOptions.stageHandlingOptions : undefined, otherSettings, otherOptions, caller);
+
+  // Configure a default Kinesis instance on context.kinesis if not already configured, which is needed by 3 of the configurable functions
+  configureKinesisIfNotConfigured(context, otherOptions ? otherOptions.kinesisOptions : undefined);
 }
 
 /**
@@ -213,94 +259,118 @@ function configureKinesisIfNotConfigured(context, kinesisOptions) {
  * @see {@linkcode configureStreamProcessing} for more information.
  *
  * @param {Object} context - the context onto which to configure the default stream processing settings
+ * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use
+ * @param {Object|undefined} [otherSettings] - optional other configuration settings to use
+ * @param {LoggingSettings|undefined} [otherSettings.loggingSettings] - optional logging settings to use to configure logging
+ * @param {StageHandlingSettings|undefined} [otherSettings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
+ * @param {Object|undefined} [otherOptions] - optional other configuration options to use if corresponding settings are not provided
+ * @param {LoggingOptions|undefined} [otherOptions.loggingOptions] - optional logging options to use to configure logging
+ * @param {StageHandlingOptions|undefined} [otherOptions.stageHandlingOptions] - optional stage handling options to use to configure stage handling
+ * @param {Object|undefined} [otherOptions.kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
  * @param {boolean|undefined} forceConfiguration - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
  * @return {Object} the context object configured with Kinesis stream processing settings (either existing or defaults)
  */
-function configureDefaultKinesisStreamProcessing(context, forceConfiguration) {
-  // If forceConfiguration is false check if the given context already has stream processing configured on it
-  // and, if so, do nothing more and simply return the context as is (to prevent overriding an earlier configuration)
-  if (!forceConfiguration && isStreamProcessingConfigured(context)) {
-    return context;
-  }
-  // Load local defaults for settings
-  const config = require('./config.json');
-
-  // Configure default logging from local config if not configured yet
-  configureLoggingIfNotConfigured(context, config.logging);
-
+function configureDefaultKinesisStreamProcessing(context, options, otherSettings, otherOptions, forceConfiguration) {
   // Get the default Kinesis stream processing settings from the local config file
-  const defaultSettings = getDefaultKinesisStreamProcessingSettings(config.kinesisStreamProcessingSettings);
-
+  const settings = getDefaultKinesisStreamProcessingSettings(options);
   // Configure the context with the default stream processing settings defined above
-  configureStreamProcessing(context, defaultSettings, forceConfiguration);
-
-  // Configure a default Kinesis instance on context.kinesis if not already configured, which is needed by 3 of the
-  // above functions
-  configureKinesisIfNotConfigured(context, config.kinesisOptions);
-
+  configureStreamProcessing(context, settings, otherSettings, otherOptions, forceConfiguration);
   return context;
 }
 
 /**
- * Simply returns the default Kinesis stream processing settings, preferring settings in the given config object (if
- * any) or in config.kinesisStreamProcessingSettings (if any) over the static default settings.
+ * Returns the default Kinesis stream processing settings partially overridden by the given stream processing options
+ * (if any).
  *
  * This function is used internally by {@linkcode configureDefaultKinesisStreamProcessing}, but could also be used in
- * custom configurations to get the default settings as a base and override with your customisations before calling
+ * custom configurations to get the default settings as a base to be overridden with your custom settings before calling
  * {@linkcode configureStreamProcessing}.
  *
- * @param {Object} [config] - an optional config object containing either stream processing settings or a
- * kinesisStreamProcessingSettings object
- * @param {Object} [config.kinesisStreamProcessingSettings] - an optional kinesisStreamProcessingSettings object on the
- * given config object containing stream processing settings
- * @returns {StreamProcessingSettings} a stream processing settings object
+ * @param {StreamProcessingOptions} [options] - optional stream processing options to use to override the default options
+ * @returns {StreamProcessingSettings} a stream processing settings object (including both property and function settings)
  */
-function getDefaultKinesisStreamProcessingSettings(config) {
-  if (config && config.kinesisStreamProcessingSettings) {
-    return getDefaultKinesisStreamProcessingSettings(config.kinesisStreamProcessingSettings);
-  }
-
-  function select(config, propertyName, defaultValue) {
-    const configuredValue = config ? config[propertyName] : undefined;
-    return isNotBlank(configuredValue) ? trim(configuredValue) : defaultValue
-  }
-
-  // Defaults
-  const streamType = select(config, 'streamType', defaultStreamType);
-  const taskTrackingName = select(config, 'taskTrackingName', defaultTaskTrackingName);
-
-  const timeoutAtPercentageOfRemainingTime = select(config, 'timeoutAtPercentageOfRemainingTime',
-    defaultTimeoutAtPercentageOfRemainingTime);
-
-  const maxNumberOfAttempts = select(config, 'maxNumberOfAttempts', defaultMaxNumberOfAttempts);
-
-  // DRQ and DMQ stream names
-  const deadRecordQueueName = select(config, 'deadRecordQueueName', defaultDeadRecordQueueName);
-  const deadMessageQueueName = select(config, 'deadMessageQueueName', defaultDeadMessageQueueName);
+function getDefaultKinesisStreamProcessingSettings(options) {
+  // Load defaults from local config-kinesis.json file
+  const defaults = loadDefaultKinesisStreamProcessingOptions();
 
   return {
-    // generic settings
-    streamType: streamType,
-    taskTrackingName: taskTrackingName,
-    timeoutAtPercentageOfRemainingTime: timeoutAtPercentageOfRemainingTime,
-    maxNumberOfAttempts: maxNumberOfAttempts,
-    // configurable processing functions
+    // Generic settings
+    streamType: select(options, STREAM_TYPE_SETTING, defaults.streamType),
+    taskTrackingName: select(options, TASK_TRACKING_NAME_SETTING, defaults.taskTrackingName),
+    timeoutAtPercentageOfRemainingTime: select(options, TIMEOUT_AT_PERCENTAGE_OF_REMAINING_TIME_SETTING, defaults.timeoutAtPercentageOfRemainingTime),
+    maxNumberOfAttempts: select(options, MAX_NUMBER_OF_ATTEMPTS_SETTING, defaults.maxNumberOfAttempts),
+    // Configurable processing functions
     extractMessageFromRecord: extractJsonMessageFromKinesisRecord,
     discardUnusableRecords: discardUnusableRecordsToDRQ,
     discardRejectedMessages: discardRejectedMessagesToDMQ,
     resubmitIncompleteMessages: resubmitIncompleteMessagesToKinesis,
-    // specialised settings needed by default implementations
-    deadRecordQueueName: deadRecordQueueName,
-    deadMessageQueueName: deadMessageQueueName
+    // Specialised settings needed by default implementations - e.g. DRQ and DMQ stream names
+    deadRecordQueueName: select(options, DEAD_RECORD_QUEUE_NAME_SETTING, defaults.deadRecordQueueName),
+    deadMessageQueueName: select(options, DEAD_MESSAGE_QUEUE_NAME_SETTING, defaults.deadMessageQueueName)
   };
 }
 
-function configureLoggingIfNotConfigured(context, config) {
-  if (!logging.isLoggingConfigured(context)) {
-    logging.configureLoggingFromConfig(context, config);
-    context.warn(`Logging was not configured yet - used default logging configuration from aws-stream-consumer/config.json`);
+/**
+ * Loads the default Kinesis stream processing options from the local config-kinesis.json file and fills in any missing
+ * options with the static default options.
+ * @returns {StreamProcessingOptions} the default stream processing options
+ */
+function loadDefaultKinesisStreamProcessingOptions() {
+  const config = require('./config-kinesis.json');
+  const defaultOptions = config ? config.streamProcessingOptions : undefined;
+
+  return {
+    // Generic settings
+    streamType: select(defaultOptions, 'streamType', KINESIS_STREAM_TYPE),
+    taskTrackingName: select(defaultOptions, 'taskTrackingName', 'taskTracking'),
+    timeoutAtPercentageOfRemainingTime: select(defaultOptions, 'timeoutAtPercentageOfRemainingTime', 0.9),
+    maxNumberOfAttempts: select(defaultOptions, 'maxNumberOfAttempts', 10),
+    // Specialised settings needed by default implementations - e.g. DRQ and DMQ stream names
+    deadRecordQueueName: select(defaultOptions, 'deadRecordQueueName', 'DeadRecordQueue'),
+    deadMessageQueueName: select(defaultOptions, 'deadMessageQueueName', 'DeadMessageQueue')
+  };
+}
+
+function select(opts, propertyName, defaultValue) {
+  const value = opts ? opts[propertyName] : undefined;
+  return isNotBlank(value) ? trim(value) : defaultValue
+}
+
+/**
+ * If no stream processing settings have been configured yet, then configures the given context with the given stream
+ * processing settings (if any) otherwise with the default Kinesis stream processing settings partially overridden by
+ * the given stream processing options (if any).
+ * @param {Object} context - the context to configure
+ * @param {StreamProcessingSettings|undefined} [settings] - optional stream processing settings to use to configure stream processing
+ * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use to override default options if no settings provided
+ * @param {Object|undefined} [otherSettings] - optional other configuration settings to use
+ * @param {LoggingSettings|undefined} [otherSettings.loggingSettings] - optional logging settings to use to configure logging
+ * @param {StageHandlingSettings|undefined} [otherSettings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
+ * @param {Object|undefined} [otherOptions] - optional other configuration options to use if corresponding settings are not provided
+ * @param {LoggingOptions|undefined} [otherOptions.loggingOptions] - optional logging options to use to configure logging
+ * @param {StageHandlingOptions|undefined} [otherOptions.stageHandlingOptions] - optional stage handling options to use to configure stage handling
+ * @param {Object|undefined} [otherOptions.kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
+ * @param {string|undefined} [caller] - optional arbitrary text to identify the caller of this function
+ */
+function configureStreamProcessingIfNotConfigured(context, settings, options, otherSettings, otherOptions, caller) {
+  // Configure all dependencies if not configured
+  configureDependenciesIfNotConfigured(context, otherSettings, otherOptions, caller);
+
+  // Configure stream processing if not already configured
+  if (!isStreamProcessingConfigured(context)) {
+    if (settings && typeof settings === 'object') {
+      configureStreamProcessing(context, settings, otherSettings, otherOptions, true);
+      context.warn(`Stream processing was not configured${caller ? ` before calling ${caller}` : ''} - used stream processing settings (${stringify(settings)})`);
+    } else {
+      configureDefaultKinesisStreamProcessing(context, options, otherSettings, otherOptions, true);
+      context.warn(`Stream processing was not configured${caller ? ` before calling ${caller}` : ''} - used default Kinesis stream processing configuration with options (${stringify(options)})`);
+    }
+  } else {
+    // Validate that stream processing is configured correctly
+    validateStreamProcessingConfiguration(context);
   }
+  return context;
 }
 
 // function validateStreamType(streamType) {
@@ -632,8 +702,7 @@ function resubmitIncompleteMessagesToKinesis(incompleteMessages, streamName, con
 
 function getKinesis(context) {
   if (!context.kinesis) {
-    context.warn(`context.kinesis was not configured - using default kinesis configuration`);
-    configureKinesis(context, 0);
+    configureKinesisIfNotConfigured(context, undefined);
   }
   return context.kinesis;
 }

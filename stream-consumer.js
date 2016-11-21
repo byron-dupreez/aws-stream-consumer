@@ -21,8 +21,6 @@ const Task = Tasks.Task;
 const taskUtils = require('task-utils/task-utils');
 
 const consumerConfig = require('./stream-consumer-config');
-const isStreamConsumerConfigured = consumerConfig.isStreamConsumerConfigured;
-const configureStreamConsumer = consumerConfig.configureStreamConsumer;
 
 const streamProcessing = require('./stream-processing');
 
@@ -115,8 +113,9 @@ function processStreamEvent(event, awsContext, processOneTaskDefsOrNone, process
 
   try {
     // Configure the runtime settings on the given context for this stream consumer
-    if (!isStreamConsumerConfigured(context)) {
-      configureStreamConsumer(context, event, awsContext);
+    if (!consumerConfig.isStreamConsumerConfigured(context)) {
+      const options = require('./config-kinesis.json');
+      consumerConfig.configureStreamConsumer(context, undefined, options, event, awsContext);
     }
 
     // Check if the Lambda as configured will be unusable or useless, and if so, trigger a replay of all the records until

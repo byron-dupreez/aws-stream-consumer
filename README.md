@@ -125,28 +125,55 @@ To use the `aws-stream-consumer` module:
 // Create a context object
 const context = {}; // ... or your own context object
 
-const config = require('./config.json'); // ... or your own configuration file
+const settings = undefined; // ... or your own settings for custom configuration of any or all logging, stage handling and/or stream processing settings
+const options = require('./config-kinesis.json'); // ... or your own options for custom configuration of any or all logging, stage handling, kinesis and/or stream processing options
+const forceConfiguration = false;
 
 // Configure logging
 const logging = require('logging-utils');
-logging.configureLoggingFromConfig(context, config, undefined, true); // ... or configureDefaultLogging
+const loggingSettings = logging.getDefaultLoggingSettings(options.loggingOptions);
+logging.configureLogging(context, loggingSettings, forceConfiguration); 
+// ... or a slightly shorter version, similar to the above 2 lines
+logging.configureDefaultLogging(context, options.loggingOptions, undefined, forceConfiguration);
 
-// Configure stage-handling
+// Configure stage-handling, which determines the behaviour of the stage handling functions
 const stages = require('aws-core-utils/stages');
-stages.configureDefaultStageHandling(context, true); // ... or your own custom stage-handling configuration
+// ... EITHER using the default stage handling configuration
+stages.configureDefaultStageHandling(context, options.stageHandlingOptions, settings, options, forceConfiguration); 
+// ... OR using your own custom stage-handling configuration
+const stageHandlingSettings = stages.getDefaultStageHandlingSettings(options.stageHandlingOptions);
+// Optionally override the default stage handling functions with your own custom functions
+// stageHandlingSettings.customToStage = undefined;
+// stageHandlingSettings.convertAliasToStage = stages.DEFAULTS.convertAliasToStage;
+// stageHandlingSettings.injectStageIntoStreamName = stages.DEFAULTS.toStageSuffixedStreamName;
+// stageHandlingSettings.extractStageFromStreamName = stages.DEFAULTS.extractStageFromSuffixedStreamName;
+// stageHandlingSettings.injectStageIntoResourceName = stages.DEFAULTS.toStageSuffixedResourceName;
+// stageHandlingSettings.extractStageFromResourceName = stages.DEFAULTS.extractStageFromSuffixedResourceName;
+stages.configureStageHandling(context, stageHandlingSettings, settings, options, forceConfiguration);
 
 // Configure a default Kinesis instance (if you are using the default stream processing configuration or you are using Kinesis)
 const kinesisUtils = require('aws-core-utils/kinesis-utils');
-// Only specify a region in the kinesisOptions if you do NOT want to use your AWS Lambda's region
-kinesisUtils.configureKinesis(context, config.kinesisOptions);
+// Only specify a region in the kinesisOptions if you do NOT want to use your AWS Lambda's current region
+kinesisUtils.configureKinesis(context, options.kinesisOptions);
 
 // Configure stream processing
 const streamProcessing = require('aws-stream-consumer/stream-processing');
-streamProcessing.configureDefaultKinesisStreamProcessing(context, true); // ... or your own custom stream processing configuration
+
+// ... EITHER using the default Kinesis stream processing configuration 
+streamProcessing.configureDefaultKinesisStreamProcessing(context, options.streamProcessingOptions, settings, options, forceConfiguration); 
+// ... OR using your own custom stream processing configuration
+const streamProcessingSettings = streamProcessing.getDefaultKinesisStreamProcessingSettings(options.streamProcessingOptions);
+// Optionally customize the default stream processing functions
+// streamProcessingSettings.extractMessageFromRecord = streamProcessing.DEFAULTS.extractJsonMessageFromKinesisRecord;
+// streamProcessingSettings.discardUnusableRecords = streamProcessing.DEFAULTS.discardUnusableRecordsToDRQ;
+// streamProcessingSettings.resubmitIncompleteMessages = streamProcessing.DEFAULTS.resubmitIncompleteMessagesToKinesis();
+// streamProcessingSettings.discardRejectedMessages = streamProcessing.DEFAULTS.discardRejectedMessagesToDMQ;
+streamProcessing.configureStreamProcessing(context, streamProcessingSettings, settings, options, forceConfiguration);
 
 // Configure the stream consumer's runtime settings
 const streamConsumerConfig = require('aws-stream-consumer/stream-consumer-config');
-streamConsumerConfig.configureStreamConsumer(context, event, awsContext);
+
+streamConsumerConfig.configureStreamConsumer(context, settings, options, awsEvent, awsContext);
 ```
 2. Define the tasks that you want to execute on individual messages and/or on the entire batch of messages
 ```js
@@ -170,7 +197,7 @@ const processOneTaskDefs = [saveMessageTaskDef]; // ... and/or more task definit
 const processAllTaskDefs = [logMessagesToS3TaskDef]; // ... and/or more task definitions
 
 const streamConsumer = require('aws-stream-consumer/stream-consumer');
-const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+const promise = streamConsumer.processStreamEvent(awsEvent, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 ```
 4. Within your custom task execute function(s), update the message's (or messages') tasks' and/or sub-tasks' states
    * Example custom "process one" task execute function for processing a single, individual message at a time
@@ -262,6 +289,38 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.0-beta.4
+
+- Changes to `stream-consumer-config` module:
+  - Changed `configureStreamConsumer` function to accept new `settings` and `options` arguments to enable complete 
+    configuration of the stream consumer via the arguments
+  - Removed `configureLoggingIfNotConfigured` function, which was migrated to `logging-utils/logging.js`
+  - Removed `configureDefaultStageHandlingIfNotConfigured` function, which was migrated to `aws-core-utils/stages.js`
+  - Removed `configureDefaultKinesisStreamProcessingIfNotConfigured` function, which was migrated to `stream-processing.js`
+- Changes to `stream-processing` module:
+  - Removed module-scope default variables
+  - Added a typedef for `StreamProcessingOptions` to be used in JsDoc for parameters & return values
+  - Added new `configureDependenciesIfNotConfigured` function to configure stream processing dependencies (i.e. logging, 
+    stage handling & kinesis for now)
+  - Added new `configureStreamProcessingIfNotConfigured` function to replace the `stream-consumer-config` module's
+    `configureDefaultKinesisStreamProcessingIfNotConfigured` function and to first invoke the new 
+    `configureDependenciesIfNotConfigured` function
+  - Changed `configureStreamProcessing` function to accept `otherSettings` and `otherOptions` as 3rd & 4th arguments to 
+    enable configuration of dependencies and to first invoke invoke new `configureDependenciesIfNotConfigured` function
+  - Changed `configureDefaultKinesisStreamProcessing` function to accept `options`, `otherSettings` and `otherOptions` 
+    as 2nd, 3rd & 4th arguments to enable customisation of default options and configuration of dependencies, and to 
+    always invoke `configureStreamProcessing`
+  - Changed `configureKinesisIfNotConfigured` to use local default options from `config-kinesis.json` if no kinesisOptions
+    are provided and context.kinesis is not already configured
+  - Changed `getDefaultKinesisStreamProcessingSettings` function to accept an explicit stream processing `options` 
+    object of type `StreamProcessingOptions` as its sole argument instead of an arbitrary `config` object to enable
+    customization of default options
+  - Added new `loadDefaultKinesisStreamProcessingOptions` function to load default stream processing options from the 
+    local `config-kinesis.json` file
+  - Changed `getDefaultKinesisStreamProcessingSettings` function to use new `loadDefaultKinesisStreamProcessingOptions` function
+  - Changed `getKinesis` function to use `configureKinesisIfNotConfigured` instead of directly calling 
+    `aws-core-utils/kinesis-utils#configureKinesis` to enable use of local default kinesis options
 
 ### 1.0.0-beta.3
 - Changes to `stream-consumer` module: 
