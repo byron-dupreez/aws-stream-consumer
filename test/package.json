@@ -1,6 +1,6 @@
 {
   "name": "aws-stream-consumer-tests",
-  "version": "1.0.0-beta.5",
+  "version": "1.0.0-beta.6",
   "author": "Byron du Preez",
   "main": "aws-stream-consumer.test.js",
   "license": "Apache-2.0",

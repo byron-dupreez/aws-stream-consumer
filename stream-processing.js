@@ -101,6 +101,18 @@ const stringify = Strings.stringify;
 
 const logging = require('logging-utils');
 
+/**
+ * @typedef {Object} OtherSettings - configuration settings
+ * @property {LoggingSettings|undefined} [loggingSettings] - optional logging settings to use to configure logging
+ * @property {StageHandlingSettings|undefined} [stageHandlingSettings] - optional stage handling settings to use to configure stage handling
+ */
+
+/**
+ * @typedef {Object} OtherOptions - configuration options to use if no corresponding settings are provided
+ * @property {LoggingOptions|undefined} [loggingOptions] - optional logging options to use to configure logging
+ * @property {StageHandlingOptions|undefined} [stageHandlingOptions] - optional stage handling options to use to configure stage handling
+ * @property {Object|undefined} [kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
+ */
 // =====================================================================================================================
 // Stream processing configuration - configures and determines the processing behaviour of a stream consumer
 // =====================================================================================================================
@@ -167,13 +179,8 @@ function isStreamProcessingConfigured(context) {
  *
  * @param {Object} context - the context onto which to configure the given stream processing settings
  * @param {StreamProcessingSettings} settings - the stream processing settings to use
- * @param {Object|undefined} [otherSettings] - optional other configuration settings to use
- * @param {LoggingSettings|undefined} [otherSettings.loggingSettings] - optional logging settings to use to configure logging
- * @param {StageHandlingSettings|undefined} [otherSettings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
- * @param {Object|undefined} [otherOptions] - optional other configuration options to use if no corresponding other settings are provided
- * @param {LoggingOptions|undefined} [otherOptions.loggingOptions] - optional logging options to use to configure logging
- * @param {StageHandlingOptions|undefined} [otherOptions.stageHandlingOptions] - optional stage handling options to use to configure stage handling
- * @param {Object|undefined} [otherOptions.kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
+ * @param {OtherSettings|undefined} [otherSettings] - optional other configuration settings to use
+ * @param {OtherOptions|undefined} [otherOptions] - optional other configuration options to use if no corresponding other settings are provided
  * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
  * @return {Object} the context object configured with stream processing (either existing or new)
@@ -220,13 +227,8 @@ function configureKinesisIfNotConfigured(context, kinesisOptions) {
  * using the given other settings and given other options.
  *
  * @param {Object} context - the context onto which to configure the given stream processing dependencies
- * @param {Object|undefined} [otherSettings] - optional other configuration settings to use
- * @param {LoggingSettings|undefined} [otherSettings.loggingSettings] - optional logging settings to use to configure logging
- * @param {StageHandlingSettings|undefined} [otherSettings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
- * @param {Object|undefined} [otherOptions] - optional other configuration options to use if no corresponding other settings are provided
- * @param {LoggingOptions|undefined} [otherOptions.loggingOptions] - optional logging options to use to configure logging
- * @param {StageHandlingOptions|undefined} [otherOptions.stageHandlingOptions] - optional stage handling options to use to configure stage handling
- * @param {Object|undefined} [otherOptions.kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
+ * @param {OtherSettings|undefined} [otherSettings] - optional other configuration settings to use
+ * @param {OtherOptions|undefined} [otherOptions] - optional other configuration options to use if no corresponding other settings are provided
  * @param {string|undefined} [caller] - optional arbitrary text to identify the caller of this function
  * @returns {Object} the context object configured with stream processing dependencies
  */
@@ -260,13 +262,8 @@ function configureDependenciesIfNotConfigured(context, otherSettings, otherOptio
  *
  * @param {Object} context - the context onto which to configure the default stream processing settings
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use
- * @param {Object|undefined} [otherSettings] - optional other configuration settings to use
- * @param {LoggingSettings|undefined} [otherSettings.loggingSettings] - optional logging settings to use to configure logging
- * @param {StageHandlingSettings|undefined} [otherSettings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
- * @param {Object|undefined} [otherOptions] - optional other configuration options to use if corresponding settings are not provided
- * @param {LoggingOptions|undefined} [otherOptions.loggingOptions] - optional logging options to use to configure logging
- * @param {StageHandlingOptions|undefined} [otherOptions.stageHandlingOptions] - optional stage handling options to use to configure stage handling
- * @param {Object|undefined} [otherOptions.kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
+ * @param {OtherSettings|undefined} [otherSettings] - optional other configuration settings to use
+ * @param {OtherOptions|undefined} [otherOptions] - optional other configuration options to use if corresponding settings are not provided
  * @param {boolean|undefined} forceConfiguration - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
  * @return {Object} the context object configured with Kinesis stream processing settings (either existing or defaults)
@@ -344,13 +341,8 @@ function select(opts, propertyName, defaultValue) {
  * @param {Object} context - the context to configure
  * @param {StreamProcessingSettings|undefined} [settings] - optional stream processing settings to use to configure stream processing
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use to override default options if no settings provided
- * @param {Object|undefined} [otherSettings] - optional other configuration settings to use
- * @param {LoggingSettings|undefined} [otherSettings.loggingSettings] - optional logging settings to use to configure logging
- * @param {StageHandlingSettings|undefined} [otherSettings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
- * @param {Object|undefined} [otherOptions] - optional other configuration options to use if corresponding settings are not provided
- * @param {LoggingOptions|undefined} [otherOptions.loggingOptions] - optional logging options to use to configure logging
- * @param {StageHandlingOptions|undefined} [otherOptions.stageHandlingOptions] - optional stage handling options to use to configure stage handling
- * @param {Object|undefined} [otherOptions.kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
+ * @param {OtherSettings|undefined} [otherSettings] - optional other configuration settings to use
+ * @param {OtherOptions|undefined} [otherOptions] - optional other configuration options to use if corresponding settings are not provided
  * @param {string|undefined} [caller] - optional arbitrary text to identify the caller of this function
  */
 function configureStreamProcessingIfNotConfigured(context, settings, options, otherSettings, otherOptions, caller) {

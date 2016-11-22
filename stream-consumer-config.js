@@ -34,6 +34,21 @@ const Arrays = require('core-functions/arrays');
 
 const logging = require('logging-utils');
 
+/**
+ * @typedef {Object} Settings - configuration settings
+ * @property {LoggingSettings|undefined} [loggingSettings] - optional logging settings to use to configure logging
+ * @property {StageHandlingSettings|undefined} [stageHandlingSettings] - optional stage handling settings to use to configure stage handling
+ * @property {StreamProcessingSettings|undefined} [streamProcessingSettings] - optional stream processing settings to use to configure stream processing
+ */
+
+/**
+ * @typedef {Object} Options - configuration options to use if no corresponding settings are provided
+ * @property {LoggingOptions|undefined} [loggingOptions] - optional logging options to use to configure logging
+ * @property {StageHandlingOptions|undefined} [stageHandlingOptions] - optional stage handling options to use to configure stage handling
+ * @property {StreamProcessingOptions|undefined} [streamProcessingOptions] - optional stream processing options to use to configure stream processing
+ * @property {Object|undefined} [kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
+ */
+
 // =====================================================================================================================
 // Consumer configuration - configures the runtime settings for a stream consumer on a given context from a given AWS event and AWS context
 // =====================================================================================================================
@@ -56,19 +71,12 @@ function isStreamConsumerConfigured(context) {
  * trigger a replay of all the records in the current batch until the Lambda can be fixed.
  *
  * @param {Object} context - the context onto which to configure a stream consumer's runtime settings
- * @param {Object|undefined} [settings] - optional configuration settings to use
- * @param {LoggingSettings|undefined} [settings.loggingSettings] - optional logging settings to use to configure logging
- * @param {StageHandlingSettings|undefined} [settings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
- * @param {StreamProcessingSettings|undefined} [settings.streamProcessingSettings] - optional stream processing settings to use to configure stream processing
- * @param {Object|undefined} [options] - configuration options to use if no corresponding settings are provided
- * @param {LoggingOptions|undefined} [options.loggingOptions] - optional logging options to use to configure logging
- * @param {StageHandlingOptions|undefined} [options.stageHandlingOptions] - optional stage handling options to use to configure stage handling
- * @param {StreamProcessingOptions|undefined} [options.streamProcessingOptions] - optional stream processing options to use to configure stream processing
- * @param {Object|undefined} [options.kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
+ * @param {Settings|undefined} [settings] - optional configuration settings to use
+ * @param {Options|undefined} [options] - configuration options to use if no corresponding settings are provided
  * @param {Object} event - the AWS event, which was passed to your lambda
  * @param {Object} awsContext - the AWS context, which was passed to your lambda
- * @throws {Error} an error if the region, stage and/or source stream name cannot be resolved
  * @return {Object} the context object configured with a stream consumer's runtime settings
+ * @throws {Error} an error if the region, stage and/or source stream name cannot be resolved
  */
 function configureStreamConsumer(context, settings, options, event, awsContext) {
 
