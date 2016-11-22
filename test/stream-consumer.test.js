@@ -425,7 +425,7 @@ test('processStreamEvent with 1 message that succeeds all tasks', t => {
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -464,7 +464,7 @@ test('processStreamEvent with 1 message that succeeds all tasks', t => {
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -498,7 +498,7 @@ test('processStreamEvent with 1 message that succeeds all tasks (despite broken 
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -533,7 +533,7 @@ test('processStreamEvent with 1 message that succeeds all tasks (despite broken 
       })
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -573,7 +573,7 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -613,7 +613,7 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 
@@ -649,7 +649,7 @@ test('processStreamEvent with 1 unusable record', t => {
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -686,7 +686,7 @@ test('processStreamEvent with 1 unusable record', t => {
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -718,7 +718,7 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -820,7 +820,7 @@ test('processStreamEvent with 1 message that fails its processOne task, resubmit
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -860,7 +860,7 @@ test('processStreamEvent with 1 message that fails its processOne task, resubmit
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -893,7 +893,7 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -958,7 +958,7 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -994,7 +994,7 @@ test('processStreamEvent with 1 message that fails its processAll task, resubmit
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -1034,7 +1034,7 @@ test('processStreamEvent with 1 message that fails its processAll task, resubmit
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -1067,7 +1067,7 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -1132,7 +1132,7 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -1186,7 +1186,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -1226,7 +1226,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -1265,7 +1265,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -1329,7 +1329,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
           });
       });
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -1371,7 +1371,7 @@ test('processStreamEvent with 1 message that rejects - must discard rejected mes
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -1411,7 +1411,7 @@ test('processStreamEvent with 1 message that rejects - must discard rejected mes
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -1450,7 +1450,7 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -1515,7 +1515,7 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -1590,7 +1590,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -1630,7 +1630,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -1697,7 +1697,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -1762,7 +1762,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -1830,7 +1830,7 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -1870,7 +1870,7 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -1908,7 +1908,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must resu
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -1944,7 +1944,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must resu
       })
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });
@@ -1978,7 +1978,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
   // Process the event
   try {
     streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
       t.pass(`processStreamEvent returned a promise`);
@@ -2044,7 +2044,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
       });
 
   } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed (${err})`, err.stack);
+    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
     t.end(err);
   }
 });

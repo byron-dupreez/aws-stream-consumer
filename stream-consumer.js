@@ -100,24 +100,25 @@ module.exports = {
  * extracted from the event.
  *
  * @param {Object} event - the AWS stream event
- * @param {Object} awsContext - the AWS context
  * @param {TaskDef[]|undefined} [processOneTaskDefsOrNone] - an "optional" list of "processOne" task definitions that
  * will be used to generate the tasks to be executed on each message independently
  * @param {TaskDef[]|undefined} [processAllTaskDefsOrNone] - an "optional" list of "processAll" task definitions that
  * will be used to generate the tasks to be executed on all of the event's messages collectively
- * @param {Object} context - the context
+ * @param {Object} context - the configured context to use
  * @returns {Promise.<StreamProcessingResults|StreamProcessingError>} a resolved promise with the full stream processing
  * results or a rejected promise with an error with partial stream processing results
  */
-function processStreamEvent(event, awsContext, processOneTaskDefsOrNone, processAllTaskDefsOrNone, context) {
+function processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsOrNone, context) {
+
+  // Ensure that the stream consumer is configured before proceeding, and if not, trigger a replay of all the records
+  // until it can be fixed
+  if (!consumerConfig.isStreamConsumerConfigured(context)) {
+    const errMsg = `FATAL - Your stream consumer MUST be configured before invoking processStreamEvents (see stream-consumer-config configureStreamConsumer). Fix your Lambda and redeploy ASAP, since this issue is blocking all of your stream's shards!`;
+    (context.error ? context.error : console.error)(errMsg);
+    return Promise.reject(new Error(errMsg));
+  }
 
   try {
-    // Configure the runtime settings on the given context for this stream consumer
-    if (!consumerConfig.isStreamConsumerConfigured(context)) {
-      const options = require('./config-kinesis.json');
-      consumerConfig.configureStreamConsumer(context, undefined, options, event, awsContext);
-    }
-
     // Check if the Lambda as configured will be unusable or useless, and if so, trigger a replay of all the records until
     // it can be fixed
     validateTaskDefinitions(processOneTaskDefsOrNone, processAllTaskDefsOrNone, context);

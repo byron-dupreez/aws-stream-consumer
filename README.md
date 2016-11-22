@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.3
+# aws-stream-consumer v1.0.0-beta.5
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -290,6 +290,13 @@ See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) f
 
 ## Changes
 
+### 1.0.0-beta.5
+
+- Changes to `stream-consumer` module:
+  - Changed `processStreamEvent` function to throw an error if the stream consumer is not configured on the context 
+    rather than set up incorrect default configuration
+  - Removed unused `awsContext` argument from `processStreamEvent` function
+  
 ### 1.0.0-beta.4
 
 - Changes to `stream-consumer-config` module:

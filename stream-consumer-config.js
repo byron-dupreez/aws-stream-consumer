@@ -60,7 +60,7 @@ function isStreamConsumerConfigured(context) {
  * @param {LoggingSettings|undefined} [settings.loggingSettings] - optional logging settings to use to configure logging
  * @param {StageHandlingSettings|undefined} [settings.stageHandlingSettings] - optional stage handling settings to use to configure stage handling
  * @param {StreamProcessingSettings|undefined} [settings.streamProcessingSettings] - optional stream processing settings to use to configure stream processing
- * @param {Object} options - configuration options to use if no corresponding settings are provided
+ * @param {Object|undefined} [options] - configuration options to use if no corresponding settings are provided
  * @param {LoggingOptions|undefined} [options.loggingOptions] - optional logging options to use to configure logging
  * @param {StageHandlingOptions|undefined} [options.stageHandlingOptions] - optional stage handling options to use to configure stage handling
  * @param {StreamProcessingOptions|undefined} [options.streamProcessingOptions] - optional stream processing options to use to configure stream processing
