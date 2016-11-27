@@ -12,16 +12,19 @@
     "injectInCase": "upper"
   },
 
-  "kinesisOptions": {
-    "maxRetries": 0
-  },
-
   "streamProcessingOptions": {
-    "streamType": "kinesis",
+    "streamType": "dynamodb",
     "taskTrackingName": "taskTracking",
     "timeoutAtPercentageOfRemainingTime": 0.9,
     "maxNumberOfAttempts": 10,
+    "taskTrackingTableName": "MessageTaskTracking",
     "deadRecordQueueName": "DeadRecordQueue",
-    "deadMessageQueueName": "DeadMessageQueue"
+    "deadMessageQueueName": "DeadMessageQueue",
+    "kinesisOptions": {
+      "maxRetries": 0
+    },
+    "dynamoDBDocClientOptions": {
+      "maxRetries": 1
+    }
   }
 }

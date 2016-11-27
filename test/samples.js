@@ -39,13 +39,22 @@ module.exports = {
 
   // For Kinesis events
   sampleStreamName: sampleStreamName,
-  sampleEventSourceArn: sampleEventSourceArn,
-  sampleEventSourceArnFromPrefixSuffix: sampleEventSourceArnFromPrefixSuffix,
+  sampleKinesisEventSourceArn: sampleKinesisEventSourceArn,
+  sampleKinesisEventSourceArnFromPrefixSuffix: sampleKinesisEventSourceArnFromPrefixSuffix,
   sampleBase64Data: sampleBase64Data,
   sampleKinesisRecord: sampleKinesisRecord,
   sampleKinesisEventWithSampleRecord: sampleKinesisEventWithSampleRecord,
   sampleKinesisEventWithRecord: sampleKinesisEventWithRecord,
-  sampleKinesisEventWithRecords: sampleKinesisEventWithRecords
+  sampleKinesisEventWithRecords: sampleKinesisEventWithRecords,
+
+  awsKinesisStreamsSampleEvent: awsKinesisStreamsSampleEvent,
+
+  // For DynamoDB stream events
+  sampleTableName: sampleTableName,
+  sampleDynamoDBEventSourceArn: sampleDynamoDBEventSourceArn,
+  sampleDynamoDBEventSourceArnFromPrefixSuffix: sampleDynamoDBEventSourceArnFromPrefixSuffix,
+
+  awsDynamoDBUpdateSampleEvent: awsDynamoDBUpdateSampleEvent
 };
 
 const Strings = require('core-functions/strings');
@@ -67,6 +76,12 @@ function sampleStreamName(streamNamePrefix, streamNameSuffix) {
   return `${prefix}${suffix}`;
 }
 
+function sampleTableName(tableNamePrefix, tableNameSuffix) {
+  const prefix = isNotBlank(tableNamePrefix) ? tableNamePrefix : 'TestDynamoDBTable';
+  const suffix = isNotBlank(tableNameSuffix) ? tableNameSuffix : '';
+  return `${prefix}${suffix}`;
+}
+
 function sampleInvokedFunctionArn(invokedFunctionArnRegion, functionName, functionAlias) {
   const region = isNotBlank(invokedFunctionArnRegion) ? invokedFunctionArnRegion : 'IF_ARN_REGION';
   const funcName = isNotBlank(functionName) ? functionName : sampleFunctionName;
@@ -74,15 +89,29 @@ function sampleInvokedFunctionArn(invokedFunctionArnRegion, functionName, functi
   return `arn:aws:lambda:${region}:${sampleAwsAccountId}:function:${funcName}${aliasSuffix}`
 }
 
-function sampleEventSourceArn(eventSourceArnRegion, streamName) {
+function sampleKinesisEventSourceArn(eventSourceArnRegion, streamName) {
   const region = isNotBlank(eventSourceArnRegion) ? eventSourceArnRegion : 'EF_ARN_REGION';
   const streamName1 = isNotBlank(streamName) ? streamName : sampleStreamName();
   return `arn:aws:kinesis:${region}:${sampleAwsAccountId}:stream/${streamName1}`;
 }
 
-function sampleEventSourceArnFromPrefixSuffix(eventSourceArnRegion, streamNamePrefix, streamNameSuffix) {
+function sampleDynamoDBEventSourceArn(eventSourceArnRegion, tableName, timestamp) {
+  const region = isNotBlank(eventSourceArnRegion) ? eventSourceArnRegion : 'EF_ARN_REGION';
+  const tableName1 = isNotBlank(tableName) ? tableName : sampleTableName();
+  const timestamp0 = isNotBlank(timestamp) ? timestamp : new Date().toISOString();
+  const timestamp1 = timestamp0.endsWith('Z') ? timestamp0.substring(0, timestamp0.length - 1) : timestamp0;
+  //arn:aws:dynamodb:us-east-1:111111111111:table/test/stream/2020-10-10T08:18:22.385
+  return `arn:aws:dynamodb:${region}:${sampleAwsAccountId}:table/${tableName1}/stream/${timestamp1}`;
+}
+
+function sampleKinesisEventSourceArnFromPrefixSuffix(eventSourceArnRegion, streamNamePrefix, streamNameSuffix) {
   const streamName = sampleStreamName(streamNamePrefix, streamNameSuffix);
-  return sampleEventSourceArn(eventSourceArnRegion, streamName);
+  return sampleKinesisEventSourceArn(eventSourceArnRegion, streamName);
+}
+
+function sampleDynamoDBEventSourceArnFromPrefixSuffix(eventSourceArnRegion, tableNamePrefix, tableNameSuffix, timestamp) {
+  const tableName = sampleTableName(tableNamePrefix, tableNameSuffix);
+  return sampleDynamoDBEventSourceArn(eventSourceArnRegion, tableName, timestamp);
 }
 
 function sampleAwsContext(functionName, functionVersion, invokedFunctionArn, maxTimeInMillis) {
@@ -157,3 +186,119 @@ function sampleKinesisEventWithRecords(kinesisRecords) {
     Records: kinesisRecords
   };
 }
+
+function awsKinesisStreamsSampleEvent(identityArn, eventSourceArn) {
+  return {
+    "Records": [
+      {
+        "eventID": "shardId-000000000000:49545115243490985018280067714973144582180062593244200961",
+        "eventVersion": "1.0",
+        "kinesis": {
+          "partitionKey": "partitionKey-3",
+          "data": "SGVsbG8sIHRoaXMgaXMgYSB0ZXN0IDEyMy4=",
+          "kinesisSchemaVersion": "1.0",
+          "sequenceNumber": "49545115243490985018280067714973144582180062593244200961"
+        },
+        "invokeIdentityArn": identityArn,
+        "eventName": "aws:kinesis:record",
+        "eventSourceARN": eventSourceArn,
+        "eventSource": "aws:kinesis",
+        "awsRegion": "us-east-1"
+      }
+    ]
+  };
+}
+
+function awsDynamoDBUpdateSampleEvent(eventSourceArn) {
+  return {
+    "Records": [
+      {
+        "eventID": "1",
+        "eventVersion": "1.0",
+        "dynamodb": {
+          "Keys": {
+            "Id": {
+              "N": "101"
+            }
+          },
+          "NewImage": {
+            "Message": {
+              "S": "New item!"
+            },
+            "Id": {
+              "N": "101"
+            }
+          },
+          "StreamViewType": "NEW_AND_OLD_IMAGES",
+          "SequenceNumber": "111",
+          "SizeBytes": 26
+        },
+        "awsRegion": "us-west-2",
+        "eventName": "INSERT",
+        "eventSourceARN": eventSourceArn,
+        "eventSource": "aws:dynamodb"
+      },
+      {
+        "eventID": "2",
+        "eventVersion": "1.0",
+        "dynamodb": {
+          "OldImage": {
+            "Message": {
+              "S": "New item!"
+            },
+            "Id": {
+              "N": "101"
+            }
+          },
+          "SequenceNumber": "222",
+          "Keys": {
+            "Id": {
+              "N": "101"
+            }
+          },
+          "SizeBytes": 59,
+          "NewImage": {
+            "Message": {
+              "S": "This item has changed"
+            },
+            "Id": {
+              "N": "101"
+            }
+          },
+          "StreamViewType": "NEW_AND_OLD_IMAGES"
+        },
+        "awsRegion": "us-west-2",
+        "eventName": "MODIFY",
+        "eventSourceARN": eventSourceArn,
+        "eventSource": "aws:dynamodb"
+      },
+      {
+        "eventID": "3",
+        "eventVersion": "1.0",
+        "dynamodb": {
+          "Keys": {
+            "Id": {
+              "N": "101"
+            }
+          },
+          "SizeBytes": 38,
+          "SequenceNumber": "333",
+          "OldImage": {
+            "Message": {
+              "S": "This item has changed"
+            },
+            "Id": {
+              "N": "101"
+            }
+          },
+          "StreamViewType": "NEW_AND_OLD_IMAGES"
+        },
+        "awsRegion": "us-west-2",
+        "eventName": "REMOVE",
+        "eventSourceARN": eventSourceArn,
+        "eventSource": "aws:dynamodb"
+      }
+    ]
+  };
+}
+

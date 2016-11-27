@@ -1,12 +1,10 @@
-# aws-stream-consumer v1.0.0-beta.6
+# aws-stream-consumer v1.0.0-beta.7
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
 ## Modules:
 - `stream-consumer.js` module
-  - Utilities and functions to be used to robustly consume messages from an AWS Kinesis or DynamoDB stream event
-- `stream-consumer-config.js` module 
-  - Utilities for configuring and accessing the runtime settings of a Kinesis or DynamoDB stream consumer from a given AWS event and AWS context
+  - Utilities and functions to be used to configure and robustly consume messages from an AWS Kinesis or DynamoDB stream event
 - `stream-processing.js` module 
   - Utilities for configuring stream processing, which configures and determines the processing behaviour of a stream consumer
 
@@ -120,62 +118,21 @@ $ npm i --save aws-stream-consumer
 
 To use the `aws-stream-consumer` module:
 
-1. Configure the stream consumer 
+* Configure the stream consumer with Kinesis default options
 ```js
 // Create a context object
 const context = {}; // ... or your own context object
 
 const settings = undefined; // ... or your own settings for custom configuration of any or all logging, stage handling and/or stream processing settings
-const options = require('./config-kinesis.json'); // ... or your own options for custom configuration of any or all logging, stage handling, kinesis and/or stream processing options
+const options = require('aws-stream-consumer/kinesis-options.json'); // ... or your own options for custom configuration of any or all logging, stage handling, kinesis and/or stream processing options
 const forceConfiguration = false;
 
-// Configure logging
-const logging = require('logging-utils');
-const loggingSettings = logging.getDefaultLoggingSettings(options.loggingOptions);
-logging.configureLogging(context, loggingSettings, forceConfiguration); 
-// ... or a slightly shorter version, similar to the above 2 lines
-logging.configureDefaultLogging(context, options.loggingOptions, undefined, forceConfiguration);
+// Configure the stream consumer's dependencies and runtime settings
+const streamConsumer = require('aws-stream-consumer/stream-consumer');
 
-// Configure stage-handling, which determines the behaviour of the stage handling functions
-const stages = require('aws-core-utils/stages');
-// ... EITHER using the default stage handling configuration
-stages.configureDefaultStageHandling(context, options.stageHandlingOptions, settings, options, forceConfiguration); 
-// ... OR using your own custom stage-handling configuration
-const stageHandlingSettings = stages.getDefaultStageHandlingSettings(options.stageHandlingOptions);
-// Optionally override the default stage handling functions with your own custom functions
-// stageHandlingSettings.customToStage = undefined;
-// stageHandlingSettings.convertAliasToStage = stages.DEFAULTS.convertAliasToStage;
-// stageHandlingSettings.injectStageIntoStreamName = stages.DEFAULTS.toStageSuffixedStreamName;
-// stageHandlingSettings.extractStageFromStreamName = stages.DEFAULTS.extractStageFromSuffixedStreamName;
-// stageHandlingSettings.injectStageIntoResourceName = stages.DEFAULTS.toStageSuffixedResourceName;
-// stageHandlingSettings.extractStageFromResourceName = stages.DEFAULTS.extractStageFromSuffixedResourceName;
-stages.configureStageHandling(context, stageHandlingSettings, settings, options, forceConfiguration);
-
-// Configure a default Kinesis instance (if you are using the default stream processing configuration or you are using Kinesis)
-const kinesisUtils = require('aws-core-utils/kinesis-utils');
-// Only specify a region in the kinesisOptions if you do NOT want to use your AWS Lambda's current region
-kinesisUtils.configureKinesis(context, options.kinesisOptions);
-
-// Configure stream processing
-const streamProcessing = require('aws-stream-consumer/stream-processing');
-
-// ... EITHER using the default Kinesis stream processing configuration 
-streamProcessing.configureDefaultKinesisStreamProcessing(context, options.streamProcessingOptions, settings, options, forceConfiguration); 
-// ... OR using your own custom stream processing configuration
-const streamProcessingSettings = streamProcessing.getDefaultKinesisStreamProcessingSettings(options.streamProcessingOptions);
-// Optionally customize the default stream processing functions
-// streamProcessingSettings.extractMessageFromRecord = streamProcessing.DEFAULTS.extractJsonMessageFromKinesisRecord;
-// streamProcessingSettings.discardUnusableRecords = streamProcessing.DEFAULTS.discardUnusableRecordsToDRQ;
-// streamProcessingSettings.resubmitIncompleteMessages = streamProcessing.DEFAULTS.resubmitIncompleteMessagesToKinesis();
-// streamProcessingSettings.discardRejectedMessages = streamProcessing.DEFAULTS.discardRejectedMessagesToDMQ;
-streamProcessing.configureStreamProcessing(context, streamProcessingSettings, settings, options, forceConfiguration);
-
-// Configure the stream consumer's runtime settings
-const streamConsumerConfig = require('aws-stream-consumer/stream-consumer-config');
-
-streamConsumerConfig.configureStreamConsumer(context, settings, options, awsEvent, awsContext);
+streamConsumer.configureStreamConsumer(context, settings, options, awsEvent, awsContext);
 ```
-2. Define the tasks that you want to execute on individual messages and/or on the entire batch of messages
+* Define the tasks that you want to execute on individual messages and/or on the entire batch of messages
 ```js
 const taskDefs = require('task-utils/task-defs');
 const TaskDef = taskDefs.TaskDef;
@@ -191,7 +148,7 @@ saveMessageTaskDef.defineSubTasks(['sendPushNotification', 'sendEmail']);
 function logMessagesToS3(messages, context) { /* ... */ }
 const logMessagesToS3TaskDef = TaskDef.defineTask(logMessagesToS3.name, logMessagesToS3); // ... with sub-task definitions if needed
 ```
-3. Process the AWS Kinesis (or DynamoDB) stream event
+* Process the AWS Kinesis (or DynamoDB) stream event
 ```js
 const processOneTaskDefs = [saveMessageTaskDef]; // ... and/or more task definitions
 const processAllTaskDefs = [logMessagesToS3TaskDef]; // ... and/or more task definitions
@@ -199,7 +156,7 @@ const processAllTaskDefs = [logMessagesToS3TaskDef]; // ... and/or more task def
 const streamConsumer = require('aws-stream-consumer/stream-consumer');
 const promise = streamConsumer.processStreamEvent(awsEvent, awsContext, processOneTaskDefs, processAllTaskDefs, context);
 ```
-4. Within your custom task execute function(s), update the message's (or messages') tasks' and/or sub-tasks' states
+* Within your custom task execute function(s), update the message's (or messages') tasks' and/or sub-tasks' states
    * Example custom "process one" task execute function for processing a single, individual message at a time
 ```js
 function saveMessageToDynamoDB(message, context) {
@@ -268,6 +225,72 @@ function logMessagesToS3(messages, context) {
   // ...
 }
 ```
+* Advanced customisation of your stream consumer's dependencies & stream processing behaviour (if needed):
+  * Advanced customisation of the logging dependency:
+```js
+// Configure logging
+const logging = require('logging-utils');
+// EITHER - configure with your own custom logging settings and/or logging options
+logging.configureLogging(context, loggingSettings, loggingOptions, undefined, forceConfiguration); 
+
+// ... OR - simply use overriding loggingOptions with the default logging configuration 
+logging.configureDefaultLogging(context, loggingOptions, undefined, forceConfiguration);
+```
+  * Advanced customisation of the stage handling dependency:
+```js
+// Configure stage-handling, which determines the behaviour of the stage handling functions
+const stages = require('aws-core-utils/stages');
+// EITHER - configure with your own custom stage handling settings and/or stage handling options
+stages.configureStageHandling(context, stageHandlingSettings, stageHandlingOptions, otherSettings, otherOptions, forceConfiguration);
+
+// ... OR - start with the default settings and override with your own custom stage-handling configuration
+const stageHandlingSettings = stages.getDefaultStageHandlingSettings(stageHandlingOptions);
+// Optionally override the default stage handling functions with your own custom functions
+// stageHandlingSettings.customToStage = undefined;
+// stageHandlingSettings.convertAliasToStage = stages.DEFAULTS.convertAliasToStage;
+// stageHandlingSettings.injectStageIntoStreamName = stages.DEFAULTS.toStageSuffixedStreamName;
+// stageHandlingSettings.extractStageFromStreamName = stages.DEFAULTS.extractStageFromSuffixedStreamName;
+// stageHandlingSettings.injectStageIntoResourceName = stages.DEFAULTS.toStageSuffixedResourceName;
+// stageHandlingSettings.extractStageFromResourceName = stages.DEFAULTS.extractStageFromSuffixedResourceName;
+stages.configureStageHandling(context, stageHandlingSettings, undefined, otherSettings, otherOptions, forceConfiguration);
+
+// ... OR - simply override the default stage handling options with your custom stageHandlingOptions
+stages.configureDefaultStageHandling(context, stageHandlingOptions, otherSettings, otherOptions, forceConfiguration); 
+// Note that this last approach does NOT give you the option of overriding the default stage handling functions, which 
+// can only be configured via stage handling settings (i.e. not via stage handling options)
+```
+  * Advanced customisation and caching of an AWS Kinesis instance (if needed)
+```js
+// Configure and cache a default Kinesis instance (if you are using the default stream processing configuration or you are using Kinesis)
+const kinesisCache = require('aws-core-utils/kinesis-cache');
+
+// NB: Only specify a region in the kinesisOptions if you do NOT want to use your AWS Lambda's current region
+kinesisCache.configureKinesis(context, kinesisOptions);
+```
+  * Advanced customisation of your stream consumer's stream processing behaviour:
+```js
+// Configure stream processing
+const streamProcessing = require('aws-stream-consumer/stream-processing');
+
+// EITHER - configure with your own custom stream processing settings and/or stream processing options
+streamProcessing.configureStreamProcessing(context, streamProcessingSettings, streamProcessingOptions, settings, options, forceConfiguration);
+
+// ... OR - start with the default settings and override with your own custom stream processing settings
+const streamProcessingSettings = streamProcessing.getDefaultKinesisStreamProcessingSettings(streamProcessingOptions);
+// Optionally override the default stream processing functions with your own custom functions
+// streamProcessingSettings.extractMessageFromRecord = streamProcessing.DEFAULTS.extractJsonMessageFromKinesisRecord;
+// streamProcessingSettings.loadTaskTrackingState = streamProcessing.DEFAULTS.skipLoadTaskTrackingState;
+// streamProcessingSettings.saveTaskTrackingState = streamProcessing.DEFAULTS.skipSaveTaskTrackingState;
+// streamProcessingSettings.handleIncompleteMessages = streamProcessing.DEFAULTS.resubmitIncompleteMessagesToKinesis;
+// streamProcessingSettings.discardUnusableRecords = streamProcessing.DEFAULTS.discardUnusableRecordsToDRQ;
+// streamProcessingSettings.discardRejectedMessages = streamProcessing.DEFAULTS.discardRejectedMessagesToDMQ;
+streamProcessing.configureStreamProcessing(context, streamProcessingSettings, undefined, settings, options, forceConfiguration);
+
+// ... OR - simply override the default stream processing options with your custom streamProcessingOptions
+streamProcessing.configureDefaultKinesisStreamProcessing(context, streamProcessingOptions, settings, options, forceConfiguration); 
+// Note that this last approach does NOT give you the option of overriding the default stream processing functions, 
+// which can only be configured via stream processing settings (i.e. not via stream processing options)
+```
 
 ## Unit tests
 This module's unit tests were developed with and must be run with [tape](https://www.npmjs.com/package/tape). The unit tests have been tested on [Node.js v4.3.2](https://nodejs.org/en/blog/release/v4.3.2/).  
@@ -289,6 +312,54 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.0-beta.7
+
+- Deleted `stream-consumer-config` module:
+  - Deleted some of its logic and moved remainder into `stream-consumer` module
+  - Removed configuration of `context.streamConsumer.resubmitStreamName` property in favour of getting each message's 
+- Changes to `stream-processing` module:
+  - Simplified stream processing configuration to enable full-customisation of settings and/or options and to 
+    synchronize with changes made to logging configuration and stage handling configuration
+  - Moved `kinesisOptions` and new `dynamoDBDocClientOptions` under `streamProcessingOptions`
+  - Changed stream processing configuration to also configure its dependencies (i.e. logging & stage handling)
+  - Changed stream processing configuration to manage configuration and caching of a Kinesis instance and/or 
+    DynamoDB.DocumentClient instance
+  - Updated the README.md document to reflect the changes made to stream processing configuration
+  - Added configuration support for default DynamoDB stream event consumers
+  - Started implementing some of the default functions to be used by DynamoDB stream event consumers 
+  - Renamed old `configureStreamProcessing` function to `configureStreamProcessingWithSettings`
+  - Renamed `configureStreamProcessingAndDependencies` function to new `configureStreamProcessing`
+  - Deleted `configureDependenciesIfNotConfigured` function
+  - Deleted `configureDefaultStreamProcessingIfNotConfigured` function
+  - Deleted `configureStreamProcessingIfNotConfigured` function
+  - Added a `taskTrackingTableName` configuration setting andoption
+  - Renamed `getResubmitIncompleteMessagesFunction` function to `getHandleIncompleteMessagesFunction`
+  - Added new `getDefaultDynamoDBStreamProcessingSettings` function
+  - Added new `configureDefaultDynamoDBStreamProcessing` function
+  - Added new `getLoadTaskTrackingStateFunction` and `getSaveTaskTrackingStateFunction` functions
+  - Added initial, but incomplete skeleton implementations of default DynamoDB stream event processing functions
+    - Added `useStreamEventRecordAsMessage` function as a configurable extractMessageFromRecord implementation
+    - Added a configurable loadTaskTrackingState function with a default `skipLoadTaskTrackingState` implementation for 
+      default Kinesis stream event processing
+    - Added a configurable saveTaskTrackingState function with a default `skipSaveTaskTrackingState` implementation for 
+      default Kinesis stream event processing
+    - Added `replayAllMessagesIfIncomplete` function as a configurable handleIncompleteMessages implementation
+    - Changes and fixes to `discardUnusableRecordsToDRQ` and `discardRejectedMessagesToDMQ` to also support DynamoDB 
+      stream event records
+- Changes to `stream-consumer` module:
+  - Added `isStreamConsumerConfigured`, `configureStreamConsumer` & `configureRegionStageAndAwsContext` functions from 
+    deleted `stream-consumer-config.js` module
+  - Added update of tasks' new last executed at property to `taskExecutePromiseFactory` function
+  - Started implementing some of the functions needed by default DynamoDB stream event consumers
+  - Added `saveAllMessagesTaskTrackingState` function, which delegates to a configurable saveTaskTrackingState function
+  - Renamed `resubmitAnyIncompleteMessages` function to `handleAnyIncompleteMessages`
+- Added `dynamodb-options.json` file, which contains default DynamoDB stream processing options
+- Renamed `config-kinesis.json` file to `kinesis-options.json`
+- Updated `aws-core-utils` dependency to version 5.0.0
+- Updated `core-functions` dependency to version 2.0.5
+- Updated `logging-utils` dependency to version 3.0.0
+- Updated `task-utils` dependency to version 3.0.2
 
 ### 1.0.0-beta.6
 
@@ -312,7 +383,7 @@ See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) f
   - Changed `configureStreamConsumer` function to accept new `settings` and `options` arguments to enable complete 
     configuration of the stream consumer via the arguments
   - Removed `configureLoggingIfNotConfigured` function, which was migrated to `logging-utils/logging.js`
-  - Removed `configureDefaultStageHandlingIfNotConfigured` function, which was migrated to `aws-core-utils/stages.js`
+  - Removed `configureDefaultStreamProcessingIfNotConfigured` function, which was migrated to `aws-core-utils/stages.js`
   - Removed `configureDefaultKinesisStreamProcessingIfNotConfigured` function, which was migrated to `stream-processing.js`
 - Changes to `stream-processing` module:
   - Removed module-scope default variables

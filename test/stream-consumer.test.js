@@ -10,30 +10,19 @@ const test = require("tape");
 // The test subject
 const streamConsumer = require('../stream-consumer');
 
-const streamConsumerConfig = require('../stream-consumer-config');
-
 const streamProcessing = require('../stream-processing');
 
-//const consumerConfig = require('../stream-consumer-config');
-//const configureStreamConsumer = consumerConfig.configureStreamConsumer;
-
+const taskStates = require('task-utils/task-states');
 const TaskDefs = require('task-utils/task-defs');
 const TaskDef = TaskDefs.TaskDef;
-// const defineTask = TaskDef.defineTask;
-// const getRootTaskDef = TaskDef.getRootTaskDef;
-// const ensureAllTaskDefsDistinct = taskDefs.FOR_TESTING.ensureAllTaskDefsDistinct;
-// const areSubTaskNamesDistinct = taskDefs.FOR_TESTING.areSubTaskNamesDistinct;
-
 const Tasks = require('task-utils/tasks');
 const Task = Tasks.Task;
-
-const taskStates = require('task-utils/task-states');
 const taskUtils = require('task-utils/task-utils');
 
 const regions = require("aws-core-utils/regions");
 const stages = require("aws-core-utils/stages");
 //const streamEvents = require("aws-core-utils/stream-events");
-// const kinesisUtils = require("aws-core-utils/kinesis-utils");
+// const kinesisCache = require("aws-core-utils/kinesis-cache");
 
 require("core-functions/promises");
 
@@ -61,7 +50,7 @@ function setupRegion(region) {
 
 function sampleKinesisEvent(streamName, partitionKey, data, omitEventSourceARN) {
   const region = process.env.AWS_REGION;
-  const eventSourceArn = omitEventSourceARN ? undefined : samples.sampleEventSourceArn(region, streamName);
+  const eventSourceArn = omitEventSourceARN ? undefined : samples.sampleKinesisEventSourceArn(region, streamName);
   return samples.sampleKinesisEventWithSampleRecord(partitionKey, data, eventSourceArn, region);
 }
 
@@ -82,11 +71,11 @@ function sampleAwsContext(functionVersion, functionAlias, maxTimeInMillis) {
 }
 
 function configureDefaults(t, context, kinesisError) {
-  const options = require('../config-kinesis.json');
+  const options = require('../kinesis-options.json');
   logging.configureDefaultLogging(context, options.loggingOptions);
   stages.configureDefaultStageHandling(context, options.stageHandlingOptions);
   context.kinesis = dummyKinesis(t, 'Stream consumer', kinesisError);
-  //kinesisUtils.configureKinesis(context, config.kinesisOptions);
+  //kinesisCache.configureKinesis(context, config.kinesisOptions);
   streamProcessing.configureDefaultKinesisStreamProcessing(context, options.streamProcessingOptions);
 }
 
@@ -424,7 +413,7 @@ test('processStreamEvent with 1 message that succeeds all tasks', t => {
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -436,7 +425,7 @@ test('processStreamEvent with 1 message that succeeds all tasks', t => {
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -497,7 +486,7 @@ test('processStreamEvent with 1 message that succeeds all tasks (despite broken 
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -509,7 +498,7 @@ test('processStreamEvent with 1 message that succeeds all tasks (despite broken 
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -550,7 +539,7 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
   const streamName = 'TestStream_DEV2';
   const records = [];
   for (let i = 0; i < n; ++i) {
-    const eventSourceArn = samples.sampleEventSourceArn(region, streamName);
+    const eventSourceArn = samples.sampleKinesisEventSourceArn(region, streamName);
     const record = samples.sampleKinesisRecord(undefined, sampleMessage(i + 1), eventSourceArn, region);
     records.push(record);
   }
@@ -572,7 +561,7 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -584,7 +573,7 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -648,7 +637,7 @@ test('processStreamEvent with 1 unusable record', t => {
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -660,7 +649,7 @@ test('processStreamEvent with 1 unusable record', t => {
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -717,7 +706,7 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -729,7 +718,7 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -750,12 +739,12 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
           t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
           t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
 
-          Promise.every(results.discardUnusableRecordsPromise, results.resubmitIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
+          Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
             .then(resultsOrErrors => {
               const discardedUnusableRecords = resultsOrErrors[0].result;
               const discardUnusableRecordsError = resultsOrErrors[0].error;
               const resubmittedIncompleteMessages = resultsOrErrors[1].result;
-              const resubmitIncompleteMessagesError = resultsOrErrors[1].error;
+              const handleIncompleteMessagesError = resultsOrErrors[1].error;
               const discardedRejectedMessages = resultsOrErrors[2].result;
               const discardRejectedMessagesError = resultsOrErrors[2].error;
 
@@ -764,11 +753,11 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
               }
               t.equal(discardUnusableRecordsError, fatalError, `discardUnusableRecords must fail with ${fatalError}`);
 
-              if (!resubmittedIncompleteMessages || resubmitIncompleteMessagesError) {
-                t.fail(`resubmitIncompleteMessages must not fail with ${resubmitIncompleteMessagesError}`);
+              if (!resubmittedIncompleteMessages || handleIncompleteMessagesError) {
+                t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
               }
               if (resubmittedIncompleteMessages) {
-                t.equal(resubmittedIncompleteMessages.length, 0, `resubmitIncompleteMessages must have ${0} resubmitted incomplete records`);
+                t.equal(resubmittedIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} resubmitted incomplete records`);
               }
 
               if (!discardedRejectedMessages || discardRejectedMessagesError) {
@@ -819,7 +808,7 @@ test('processStreamEvent with 1 message that fails its processOne task, resubmit
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -831,7 +820,7 @@ test('processStreamEvent with 1 message that fails its processOne task, resubmit
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -892,7 +881,7 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -904,7 +893,7 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -925,12 +914,12 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
         t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
         t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.resubmitIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
+        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
             const resubmittedIncompleteMessages = resultsOrErrors[1].result;
-            const resubmitIncompleteMessagesError = resultsOrErrors[1].error;
+            const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
 
@@ -941,10 +930,10 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (resubmittedIncompleteMessages || !resubmitIncompleteMessagesError) {
-              t.fail(`resubmitIncompleteMessages must fail with ${resubmitIncompleteMessagesError}`);
+            if (resubmittedIncompleteMessages || !handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must fail with ${handleIncompleteMessagesError}`);
             }
-            t.equal(resubmitIncompleteMessagesError, fatalError, `resubmitIncompleteMessages must fail with ${fatalError}`);
+            t.equal(handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
 
             if (!discardedRejectedMessages || discardRejectedMessagesError) {
               t.fail(`discardRejectedMessages must not fail with ${discardRejectedMessagesError}`);
@@ -993,7 +982,7 @@ test('processStreamEvent with 1 message that fails its processAll task, resubmit
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1005,7 +994,7 @@ test('processStreamEvent with 1 message that fails its processAll task, resubmit
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1066,7 +1055,7 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1078,7 +1067,7 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -1099,12 +1088,12 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
         t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
         t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.resubmitIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
+        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
             const resubmittedIncompleteMessages = resultsOrErrors[1].result;
-            const resubmitIncompleteMessagesError = resultsOrErrors[1].error;
+            const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
 
@@ -1115,10 +1104,10 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (resubmittedIncompleteMessages || !resubmitIncompleteMessagesError) {
-              t.fail(`resubmitIncompleteMessages must fail with ${resubmitIncompleteMessagesError}`);
+            if (resubmittedIncompleteMessages || !handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must fail with ${handleIncompleteMessagesError}`);
             }
-            t.equal(resubmitIncompleteMessagesError, fatalError, `resubmitIncompleteMessages must fail with ${fatalError}`);
+            t.equal(handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
 
             if (!discardedRejectedMessages || discardRejectedMessagesError) {
               t.fail(`discardRejectedMessages must not fail with ${discardRejectedMessagesError}`);
@@ -1185,7 +1174,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1197,7 +1186,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1264,7 +1253,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1276,7 +1265,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -1297,12 +1286,12 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
         t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
         t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.resubmitIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
+        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
             const resubmittedIncompleteMessages = resultsOrErrors[1].result;
-            const resubmitIncompleteMessagesError = resultsOrErrors[1].error;
+            const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
 
@@ -1313,11 +1302,11 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (!resubmittedIncompleteMessages || resubmitIncompleteMessagesError) {
-              t.fail(`resubmitIncompleteMessages must not fail with ${resubmitIncompleteMessagesError}`);
+            if (!resubmittedIncompleteMessages || handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
             }
             if (resubmittedIncompleteMessages) {
-              t.equal(resubmittedIncompleteMessages.length, 0, `resubmitIncompleteMessages must have ${0} resubmitted incomplete messages`);
+              t.equal(resubmittedIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} resubmitted incomplete messages`);
             }
 
             if (discardedRejectedMessages || !discardRejectedMessagesError) {
@@ -1370,7 +1359,7 @@ test('processStreamEvent with 1 message that rejects - must discard rejected mes
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1382,7 +1371,7 @@ test('processStreamEvent with 1 message that rejects - must discard rejected mes
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1449,7 +1438,7 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1461,7 +1450,7 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -1482,12 +1471,12 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
         t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
         t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.resubmitIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
+        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
             const resubmittedIncompleteMessages = resultsOrErrors[1].result;
-            const resubmitIncompleteMessagesError = resultsOrErrors[1].error;
+            const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
 
@@ -1498,11 +1487,11 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (!resubmittedIncompleteMessages || resubmitIncompleteMessagesError) {
-              t.fail(`resubmitIncompleteMessages must not fail with ${resubmitIncompleteMessagesError}`);
+            if (!resubmittedIncompleteMessages || handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
             }
             if (resubmittedIncompleteMessages) {
-              t.equal(resubmittedIncompleteMessages.length, 0, `resubmitIncompleteMessages must have ${0} resubmitted incomplete messages`);
+              t.equal(resubmittedIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} resubmitted incomplete messages`);
             }
 
             if (discardedRejectedMessages || !discardRejectedMessagesError) {
@@ -1589,7 +1578,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1601,7 +1590,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1696,7 +1685,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1708,7 +1697,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -1729,12 +1718,12 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
         t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
         t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.resubmitIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
+        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
             const resubmittedIncompleteMessages = resultsOrErrors[1].result;
-            const resubmitIncompleteMessagesError = resultsOrErrors[1].error;
+            const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
 
@@ -1745,11 +1734,11 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (!resubmittedIncompleteMessages || resubmitIncompleteMessagesError) {
-              t.fail(`resubmitIncompleteMessages must not fail with ${resubmitIncompleteMessagesError}`);
+            if (!resubmittedIncompleteMessages || handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
             }
             if (resubmittedIncompleteMessages) {
-              t.equal(resubmittedIncompleteMessages.length, 0, `resubmitIncompleteMessages must have ${0} resubmitted incomplete messages`);
+              t.equal(resubmittedIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} resubmitted incomplete messages`);
             }
 
             if (discardedRejectedMessages || !discardRejectedMessagesError) {
@@ -1829,7 +1818,7 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1841,7 +1830,7 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1907,7 +1896,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must resu
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1919,7 +1908,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must resu
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1977,7 +1966,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
 
   // Process the event
   try {
-    streamConsumerConfig.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
     const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
     if (Promise.isPromise(promise)) {
@@ -1989,7 +1978,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    equal(t, context.streamConsumer.resubmitStreamName, streamName, 'context.streamConsumer.resubmitStreamName');
+    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -2010,12 +1999,12 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
         t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
         t.ok(results.processingTimedOut, `processStreamEvent processing must be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.resubmitIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
+        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
             const resubmittedIncompleteMessages = resultsOrErrors[1].result;
-            const resubmitIncompleteMessagesError = resultsOrErrors[1].error;
+            const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
 
@@ -2026,10 +2015,10 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (resubmittedIncompleteMessages || !resubmitIncompleteMessagesError) {
-              t.fail(`resubmitIncompleteMessages must fail with ${resubmitIncompleteMessagesError}`);
+            if (resubmittedIncompleteMessages || !handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must fail with ${handleIncompleteMessagesError}`);
             }
-            t.equal(resubmitIncompleteMessagesError, fatalError, `resubmitIncompleteMessages must fail with ${fatalError}`);
+            t.equal(handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
 
             if (!discardedRejectedMessages || discardRejectedMessagesError) {
               t.fail(`discardRejectedMessages must not fail with ${discardRejectedMessagesError}`);

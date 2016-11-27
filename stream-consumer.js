@@ -1,28 +1,32 @@
 'use strict';
 
+// AWS core utilities
 const regions = require('aws-core-utils/regions');
-
+const stages = require('aws-core-utils/stages');
+// const arns = require('aws-core-utils/arns');
 const streamEvents = require('aws-core-utils/stream-events');
 
 const Strings = require('core-functions/strings');
+//const isBlank = Strings.isBlank;
 const isNotBlank = Strings.isNotBlank;
+// const trim = Strings.trim;
 const stringify = Strings.stringify;
 
 const Arrays = require('core-functions/arrays');
 
+// Tasks, task definitions, task states & task utilities
 const states = require('task-utils/task-states');
-
 const taskDefs = require('task-utils/task-defs');
 const TaskDef = taskDefs.TaskDef;
-
 const Tasks = require('task-utils/tasks');
 const Task = Tasks.Task;
-
 const taskUtils = require('task-utils/task-utils');
 
-const consumerConfig = require('./stream-consumer-config');
-
+// Dependencies
+const logging = require('logging-utils');
+//const stageHandling = require('aws-core-utils/stages');
 const streamProcessing = require('./stream-processing');
+//const kinesisCache = require('aws-core-utils/kinesis-cache');
 
 /**
  * Utilities and functions to be used to robustly consume messages from an AWS Kinesis or DynamoDB event stream.
@@ -30,6 +34,12 @@ const streamProcessing = require('./stream-processing');
  * @author Byron du Preez
  */
 module.exports = {
+  // Configuration
+  isStreamConsumerConfigured: isStreamConsumerConfigured,
+  configureStreamConsumer: configureStreamConsumer,
+  configureRegionStageAndAwsContext: configureRegionStageAndAwsContext,
+
+  // Processing
   processStreamEvent: processStreamEvent,
 
   validateTaskDefinitions: validateTaskDefinitions,
@@ -55,12 +65,96 @@ module.exports = {
     discardAnyUnusableRecords: discardAnyUnusableRecords,
     finaliseMessageProcessing: finaliseMessageProcessing,
     discardIncompleteTasksIfMaxAttemptsExceeded: discardIncompleteTasksIfMaxAttemptsExceeded,
-    resubmitAnyIncompleteMessages: resubmitAnyIncompleteMessages,
+    handleAnyIncompleteMessages: handleAnyIncompleteMessages,
     isMessageIncomplete: isMessageIncomplete,
     discardAnyRejectedMessages: discardAnyRejectedMessages,
     isMessageFinalisedButRejected: isMessageFinalisedButRejected
   }
 };
+
+// =====================================================================================================================
+// Consumer configuration - configures the runtime settings for a stream consumer on a given context from a given AWS event and AWS context
+// =====================================================================================================================
+
+/**
+ * @typedef {Object} Settings - configuration settings
+ * @property {LoggingSettings|undefined} [loggingSettings] - optional logging settings to use to configure logging
+ * @property {StageHandlingSettings|undefined} [stageHandlingSettings] - optional stage handling settings to use to configure stage handling
+ * @property {StreamProcessingSettings|undefined} [streamProcessingSettings] - optional stream processing settings to use to configure stream processing
+ */
+
+/**
+ * @typedef {Object} Options - configuration options to use if no corresponding settings are provided
+ * @property {LoggingOptions|undefined} [loggingOptions] - optional logging options to use to configure logging
+ * @property {StageHandlingOptions|undefined} [stageHandlingOptions] - optional stage handling options to use to configure stage handling
+ * @property {StreamProcessingOptions|undefined} [streamProcessingOptions] - optional stream processing options to use to configure stream processing
+ */
+
+/**
+ * Returns true if the stream consumer's dependencies and runtime settings have been configured on the given context;
+ * otherwise returns false.
+ * @param {Object} context - the context to check
+ * @returns {boolean} true if configured; false otherwise
+ */
+function isStreamConsumerConfigured(context) {
+  return !!context && logging.isLoggingConfigured(context) && stages.isStageHandlingConfigured(context) &&
+    context.region && context.stage && context.awsContext && streamProcessing.isStreamProcessingConfigured(context) &&
+    context.streamConsumer && typeof context.streamConsumer === 'object';
+}
+
+/**
+ * Configures the dependencies and runtime settings for the stream consumer on the given context from the given settings
+ * and/or options, the given AWS event and the given AWS context in preparation for processing of a batch of Kinesis or
+ * DynamoDB stream records. Any error thrown must subsequently trigger a replay of all the records in the current batch
+ * until the Lambda can be fixed.
+ *
+ * @param {Object} context - the context onto which to configure a stream consumer's runtime settings
+ * @param {Settings|undefined} [settings] - optional configuration settings to use to configure dependencies
+ * @param {Options|undefined} [options] - configuration options to use to configure dependencies if no corresponding settings are provided
+ * @param {Object} event - the AWS event, which was passed to your lambda
+ * @param {Object} awsContext - the AWS context, which was passed to your lambda
+ * @return {Object} the context object configured with a stream consumer's runtime settings
+ * @throws {Error} an error if the region and/or stage cannot be resolved
+ */
+function configureStreamConsumer(context, settings, options, event, awsContext) {
+  // Configure stream processing (plus logging, stage handling & kinesis) if not configured yet
+  streamProcessing.configureStreamProcessing(context, settings ? settings.streamProcessingSettings : undefined,
+    options ? options.streamProcessingOptions : undefined, settings, options, false);
+
+  // Configure region, stage & AWS context
+  configureRegionStageAndAwsContext(context, event, awsContext);
+
+  // Set up a streamConsumer object on the context to tack some of the overall flow state
+  if (!context.streamConsumer) {
+    context.streamConsumer = {};
+  }
+}
+
+/**
+ * Configures the given context with the current region, the resolved stage and the given AWS context.
+ * @param {Object} context - the context to configure
+ * @param {Object} event - the AWS event, which was passed to your lambda
+ * @param {Object} awsContext - the AWS context, which was passed to your lambda
+ */
+function configureRegionStageAndAwsContext(context, event, awsContext) {
+  // Configure context.awsContext with the given AWS context, if not already configured
+  if (!context.awsContext) {
+    context.awsContext = awsContext;
+  }
+  // Configure context.region to the AWS region, if it is not already configured
+  regions.configureRegion(context, true);
+
+  // Resolve the current stage (e.g. dev, qa, prod, ...) if possible and configure context.stage with it, if it is not
+  // already configured
+  stages.configureStage(context, event, awsContext, true);
+
+  context.info(`Using region (${context.region}) and stage (${context.stage})`);
+  return context;
+}
+
+// =====================================================================================================================
+// Process stream event
+// =====================================================================================================================
 
 /**
  * @typedef {Object} StreamProcessingResults - the stream processing results, which are returned when stream processing
@@ -84,7 +178,7 @@ module.exports = {
  * @property {boolean} processingFailed - whether or not message processing failed or not
  * @property {boolean} processingTimedOut - whether or not message processing timed out or not
  * @property {Promise.<Object[]|Error>} discardUnusableRecordsPromise - a promise of either a resolved list of zero or more successfully discarded unusable records or a rejected error
- * @property {Promise.<Object[]|Error>} resubmitIncompleteMessagesPromise - a promise of either a resolved list of zero or more successfully resubmitted incomplete records or a rejected error
+ * @property {Promise.<Object[]|Error>} handleIncompleteMessagesPromise - a promise of either a resolved list of zero or more successfully resubmitted incomplete records or a rejected error
  * @property {Promise.<Object[]|Error>} discardRejectedMessagesPromise - a promise of either a resolved list of zero or more successfully discarded rejected messages or a rejected error
  */
 
@@ -109,11 +203,10 @@ module.exports = {
  * results or a rejected promise with an error with partial stream processing results
  */
 function processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsOrNone, context) {
-
-  // Ensure that the stream consumer is configured before proceeding, and if not, trigger a replay of all the records
-  // until it can be fixed
-  if (!consumerConfig.isStreamConsumerConfigured(context)) {
-    const errMsg = `FATAL - Your stream consumer MUST be configured before invoking processStreamEvents (see stream-consumer-config configureStreamConsumer). Fix your Lambda and redeploy ASAP, since this issue is blocking all of your stream's shards!`;
+  // Ensure that the stream consumer is fully configured before proceeding, and if not, trigger a replay of all the
+  // records until it can be fixed
+  if (!isStreamConsumerConfigured(context)) {
+    const errMsg = `FATAL - Your stream consumer MUST be configured before invoking processStreamEvents (see stream-consumer#configureStreamConsumer & stream-processing). Fix your Lambda and redeploy ASAP, since this issue is blocking all of your stream's shards!`;
     (context.error ? context.error : console.error)(errMsg);
     return Promise.reject(new Error(errMsg));
   }
@@ -511,7 +604,7 @@ function executeProcessOneTask(task, message, context) {
       return result;
     },
     err => {
-      context.info(`Task ${task.name} failure took ${Date.now() - startMs} ms`);
+      context.info(`Task (${task.name}) failure took ${Date.now() - startMs} ms`);
       context.error(`Failed to execute task (${task.name}) - state (${stringify(task.state)}) on message - error (${stringify(err)})`, err.stack);
       return undefined;
     });
@@ -670,6 +763,7 @@ function taskExecutePromiseFactory(task, execute) {
       // First increment the number of attempts on this task (and all of its sub-tasks recursively), since its starting
       // to execute
       task.incrementAttempts(true);
+      task.updateLastExecutedAt(new Date(), true);
 
       // Then execute the actual execute function
       try {
@@ -873,8 +967,11 @@ function finaliseMessageProcessing(messages, unusableRecords, discardUnusableRec
   // Freeze all of the messages' tasks to prevent any further changes from the other promise that lost the timeout race
   freezeAllTasks(messages, context);
 
+  // Save the task tracking states of all of the messages
+  const saveMessagesTaskTrackingStatePromise = saveAllMessagesTaskTrackingState(messages, context);
+
   // Resubmit any still incomplete messages
-  const resubmitIncompleteMessagesPromise = resubmitAnyIncompleteMessages(messages, context);
+  const handleIncompleteMessagesPromise = handleAnyIncompleteMessages(messages, context);
 
   // Discard any finalised messages that contain at least one rejected task
   const discardRejectedMessagesPromise = discardAnyRejectedMessages(messages, context);
@@ -887,7 +984,7 @@ function finaliseMessageProcessing(messages, unusableRecords, discardUnusableRec
     processingTimedOut: isProcessingTimedOut(context)
   };
 
-  return Promise.all([discardUnusableRecordsPromise, resubmitIncompleteMessagesPromise, discardRejectedMessagesPromise])
+  return Promise.all([discardUnusableRecordsPromise, handleIncompleteMessagesPromise, discardRejectedMessagesPromise])
     .then(results => {
       const discardedUnusableRecords = results[0];
       const resubmittedIncompleteMessages = results[1];
@@ -902,7 +999,7 @@ function finaliseMessageProcessing(messages, unusableRecords, discardUnusableRec
     .catch(err => {
       err.streamProcessingPartialResults = streamProcessingResults;
       streamProcessingResults.discardUnusableRecordsPromise = discardUnusableRecordsPromise;
-      streamProcessingResults.resubmitIncompleteMessagesPromise = resubmitIncompleteMessagesPromise;
+      streamProcessingResults.handleIncompleteMessagesPromise = handleIncompleteMessagesPromise;
       streamProcessingResults.discardRejectedMessagesPromise = discardRejectedMessagesPromise;
 
       return Promise.reject(err);
@@ -951,21 +1048,51 @@ function discardIncompleteTasksIfMaxAttemptsExceeded(message, context) {
   return maxAttemptsExceeded;
 }
 
-/**
- * First finds all of the incomplete messages in the given list of all messages being processed and then attempts to
- * resubmit all of these incomplete messages using the configured resubmitIncompleteMessages function (see {@linkcode
- * stream-processing-config#configureStreamProcessing}).
- * @param {Object[]} messages - all of the messages being processed
- * @param {Object} context - the context
- * @param {Function} context.streamConsumer.resubmitStreamName - the stream name to which to resubmit the incomplete messages
- * @returns {Promise.<*>} a promise that will complete when the configured resubmitIncompleteMessages function completes
- */
-function resubmitAnyIncompleteMessages(messages, context) {
+function saveAllMessagesTaskTrackingState(messages, context) {
   const m = messages.length;
   const ms = `${m} message${m !== 1 ? 's' : ''}`;
 
   if (m <= 0) {
-    context.info(`No incomplete messages to resubmit, since ${ms}!`);
+    context.info(`No task tracking state to save, since ${ms}!`);
+    return Promise.resolve([]);
+  }
+
+  // Get the configured handleIncompleteMessages function to be used to do the actual resubmission
+  const saveTaskTrackingState = streamProcessing.getSaveTaskTrackingStateFunction(context);
+
+  if (saveTaskTrackingState) {
+    // Trigger the configured saveMessagesTaskTrackingState function to do the actual saving
+    return Promise.try(() => Promise.allOrOne(saveTaskTrackingState(messages, context)))
+      .then(results => {
+        context.info(`Saved task tracking state of ${ms} - results (${stringify(results)}`);
+        return messages;
+      })
+      .catch(err => {
+        const fnName = isNotBlank(saveTaskTrackingState.name) ? saveTaskTrackingState.name : 'saveMessagesTaskTrackingState';
+        context.error(`Failed to save task tracking state of ${ms} using the configured ${fnName} function - error (${stringify(err)}`, err.stack);
+        throw err;
+      });
+  } else {
+    const errMsg = `Cannot save task tracking state of ${ms} without a valid, configured saveMessagesTaskTrackingState function!`;
+    context.error(errMsg);
+    return Promise.reject(new Error(errMsg));
+  }
+}
+
+/**
+ * First finds all of the incomplete messages in the given list of all messages being processed and then attempts to
+ * handle all of these incomplete messages using the configured handleIncompleteMessages function (see {@linkcode
+ * stream-processing-config#configureStreamProcessing}).
+ * @param {Object[]} messages - all of the messages being processed
+ * @param {Object} context - the context
+ * @returns {Promise.<*>} a promise that will complete when the configured handleIncompleteMessages function completes
+ */
+function handleAnyIncompleteMessages(messages, context) {
+  const m = messages.length;
+  const ms = `${m} message${m !== 1 ? 's' : ''}`;
+
+  if (m <= 0) {
+    context.info(`No incomplete messages to handle, since ${ms}!`);
     return Promise.resolve([]);
   }
   // Collect all of the messages that have not been completed yet
@@ -981,28 +1108,24 @@ function resubmitAnyIncompleteMessages(messages, context) {
     return Promise.resolve([]);
   }
 
-  // Get the resubmit stream name, which will typically be the name of the source stream from which the messages were received
-  const resubmitStreamName = context.streamConsumer.resubmitStreamName;
-  context.debug(`Resubmitting ${isOfMs} back to source stream (${resubmitStreamName})`);
+  // Get the configured handleIncompleteMessages function to be used to do the actual resubmission
+  const handleIncompleteMessages = streamProcessing.getHandleIncompleteMessagesFunction(context);
 
-  // Get the configured resubmitIncompleteMessages function to be used to do the actual resubmission
-  const resubmitIncompleteMessages = streamProcessing.getResubmitIncompleteMessagesFunction(context);
-
-  if (resubmitIncompleteMessages) {
-    // Trigger the configured resubmitIncompleteMessages function to do the actual resubmitting
-    return Promise.try(() => Promise.allOrOne(resubmitIncompleteMessages(incompleteMessages, resubmitStreamName, context)))
+  if (handleIncompleteMessages) {
+    // Trigger the configured handleIncompleteMessages function to do the actual resubmitting
+    return Promise.try(() => Promise.allOrOne(handleIncompleteMessages(messages, incompleteMessages, context)))
       .then(results => {
-        context.info(`Resubmitted ${isOfMs} back to source stream (${resubmitStreamName}) - results (${stringify(results)}`);
+        context.info(`Handled ${isOfMs} - results (${stringify(results)}`);
         return incompleteMessages;
       })
       .catch(err => {
         // If resubmit fails, then no choice left, but to throw an exception back to Lambda to force a replay of the batch of messages (BAD!) :(
-        const fnName = isNotBlank(resubmitIncompleteMessages.name) ? resubmitIncompleteMessages.name : 'resubmitIncompleteMessages';
-        context.error(`Failed to resubmit ${isOfMs} using the configured ${fnName} function - error (${stringify(err)} - forced to trigger a replay`, err.stack);
+        const fnName = isNotBlank(handleIncompleteMessages.name) ? handleIncompleteMessages.name : 'handleIncompleteMessages';
+        context.error(`Failed to handle ${isOfMs} using the configured ${fnName} function - error (${stringify(err)} - forced to trigger a replay`, err.stack);
         throw err;
       });
   } else {
-    const errMsg = `Cannot resubmit ${isOfMs} without a valid, configured resubmitIncompleteMessages function - forced to trigger a replay!`;
+    const errMsg = `FATAL - Cannot handle ${isOfMs} without a valid, configured handleIncompleteMessages function - forced to trigger a replay! Fix your Lambda ASAP!`;
     context.error(errMsg);
     return Promise.reject(new Error(errMsg));
   }
