@@ -139,6 +139,7 @@ const kinesisCache = require('aws-core-utils/kinesis-cache');
 const dynamoDBDocClientCache = require('aws-core-utils/dynamodb-doc-client-cache');
 const dynamoDBUtils = require('aws-core-utils/dynamodb-utils');
 
+const Objects = require('core-functions/objects');
 const Strings = require('core-functions/strings');
 const isBlank = Strings.isBlank;
 const isNotBlank = Strings.isNotBlank;
@@ -257,8 +258,11 @@ function configureStreamProcessing(context, settings, options, otherSettings, ot
   const streamType = resolveStreamType(settings, options);
 
   // Determine the stream processing settings to be used
-  const streamProcessingSettings = settingsAvailable ? settings : streamType === DYNAMODB_STREAM_TYPE ?
+  const defaultSettings = streamType === DYNAMODB_STREAM_TYPE ?
     getDefaultDynamoDBStreamProcessingSettings(options) : getDefaultKinesisStreamProcessingSettings(options);
+
+  const streamProcessingSettings = settingsAvailable ?
+    Objects.merge(defaultSettings, settings, false, false) : defaultSettings;
 
   // Configure stream processing with the given or derived stream processing settings
   configureStreamProcessingWithSettings(context, streamProcessingSettings, otherSettings, otherOptions, forceConfiguration);
@@ -420,16 +424,13 @@ function configureDefaultDynamoDBStreamProcessing(context, options, otherSetting
  * @returns {StreamProcessingSettings} a stream processing settings object (including both property and function settings)
  */
 function getDefaultKinesisStreamProcessingSettings(options) {
+  const settings = options && typeof options === 'object' ? Objects.copy(options, true) : {};
+
   // Load defaults from local kinesis-options.json file
-  const defaults = loadDefaultKinesisStreamProcessingOptions();
+  const defaultOptions = loadDefaultKinesisStreamProcessingOptions();
+  Objects.merge(defaultOptions, settings, false, false);
 
-  return {
-    // Generic settings
-    streamType: select(options, STREAM_TYPE_SETTING, defaults.streamType),
-    taskTrackingName: select(options, TASK_TRACKING_NAME_SETTING, defaults.taskTrackingName),
-    timeoutAtPercentageOfRemainingTime: select(options, TIMEOUT_AT_PERCENTAGE_OF_REMAINING_TIME_SETTING, defaults.timeoutAtPercentageOfRemainingTime),
-    maxNumberOfAttempts: select(options, MAX_NUMBER_OF_ATTEMPTS_SETTING, defaults.maxNumberOfAttempts),
-
+  const defaultSettings = {
     // Configurable processing functions
     extractMessageFromRecord: extractJsonMessageFromKinesisRecord,
     loadTaskTrackingState: skipLoadTaskTrackingState,
@@ -437,17 +438,8 @@ function getDefaultKinesisStreamProcessingSettings(options) {
     handleIncompleteMessages: resubmitIncompleteMessagesToKinesis,
     discardUnusableRecords: discardUnusableRecordsToDRQ,
     discardRejectedMessages: discardRejectedMessagesToDMQ,
-
-    // Specialised settings needed by default DynamoDB implementations or implementations using external task tracking
-    taskTrackingTableName: select(options, TASK_TRACKING_TABLE_NAME_SETTING, defaults.taskTrackingTableName),
-    // Specialised settings needed by default implementations - e.g. DRQ and DMQ stream names
-    deadRecordQueueName: select(options, DEAD_RECORD_QUEUE_NAME_SETTING, defaults.deadRecordQueueName),
-    deadMessageQueueName: select(options, DEAD_MESSAGE_QUEUE_NAME_SETTING, defaults.deadMessageQueueName),
-
-    // Kinesis & DynamoDB.DocumentClient options
-    kinesisOptions: select(options, 'kinesisOptions', defaults.kinesisOptions),
-    dynamoDBDocClientOptions: select(options, 'dynamoDBDocClientOptions', defaults.dynamoDBDocClientOptions)
   };
+  return Objects.merge(defaultSettings, settings, false, false);
 }
 
 /**
@@ -462,16 +454,13 @@ function getDefaultKinesisStreamProcessingSettings(options) {
  * @returns {StreamProcessingSettings} a stream processing settings object (including both property and function settings)
  */
 function getDefaultDynamoDBStreamProcessingSettings(options) {
+  const settings = options && typeof options === 'object' ? Objects.copy(options, true) : {};
+
   // Load defaults from local dynamodb-options.json file
-  const defaults = loadDefaultDynamoDBStreamProcessingOptions();
+  const defaultOptions = loadDefaultDynamoDBStreamProcessingOptions();
+  Objects.merge(defaultOptions, settings, false, false);
 
-  return {
-    // Generic settings
-    streamType: select(options, STREAM_TYPE_SETTING, defaults.streamType),
-    taskTrackingName: select(options, TASK_TRACKING_NAME_SETTING, defaults.taskTrackingName),
-    timeoutAtPercentageOfRemainingTime: select(options, TIMEOUT_AT_PERCENTAGE_OF_REMAINING_TIME_SETTING, defaults.timeoutAtPercentageOfRemainingTime),
-    maxNumberOfAttempts: select(options, MAX_NUMBER_OF_ATTEMPTS_SETTING, defaults.maxNumberOfAttempts),
-
+  const defaultSettings = {
     // Configurable processing functions
     extractMessageFromRecord: useStreamEventRecordAsMessage,
     loadTaskTrackingState: loadTaskTrackingStateFromDynamoDB,
@@ -479,18 +468,8 @@ function getDefaultDynamoDBStreamProcessingSettings(options) {
     handleIncompleteMessages: replayAllMessagesIfIncomplete,
     discardUnusableRecords: discardUnusableRecordsToDRQ,
     discardRejectedMessages: discardRejectedMessagesToDMQ,
-
-    // Specialised settings needed by default DynamoDB implementations or implementations using external task tracking
-    taskTrackingTableName: select(options, TASK_TRACKING_TABLE_NAME_SETTING, defaults.taskTrackingTableName),
-
-    // Specialised settings needed by default implementations - e.g. DRQ and DMQ stream names
-    deadRecordQueueName: select(options, DEAD_RECORD_QUEUE_NAME_SETTING, defaults.deadRecordQueueName),
-    deadMessageQueueName: select(options, DEAD_MESSAGE_QUEUE_NAME_SETTING, defaults.deadMessageQueueName),
-
-    // Kinesis & DynamoDB.DocumentClient options
-    kinesisOptions: select(options, 'kinesisOptions', defaults.kinesisOptions),
-    dynamoDBDocClientOptions: select(options, 'dynamoDBDocClientOptions', defaults.dynamoDBDocClientOptions)
   };
+  return Objects.merge(defaultSettings, settings, false, false);
 }
 
 /**
@@ -500,23 +479,25 @@ function getDefaultDynamoDBStreamProcessingSettings(options) {
  */
 function loadDefaultKinesisStreamProcessingOptions() {
   const options = require('./kinesis-options.json');
-  const defaultOptions = options ? options.streamProcessingOptions : undefined;
+  const defaultOptions = options && options.streamProcessingOptions && typeof options.streamProcessingOptions === 'object' ?
+    options.streamProcessingOptions : {};
 
-  return {
+  const defaults = {
     // Generic settings
-    streamType: select(defaultOptions, 'streamType', KINESIS_STREAM_TYPE),
-    taskTrackingName: select(defaultOptions, 'taskTrackingName', 'taskTracking'),
-    timeoutAtPercentageOfRemainingTime: select(defaultOptions, 'timeoutAtPercentageOfRemainingTime', 0.9),
-    maxNumberOfAttempts: select(defaultOptions, 'maxNumberOfAttempts', 10),
+    streamType: KINESIS_STREAM_TYPE,
+    taskTrackingName: 'taskTracking',
+    timeoutAtPercentageOfRemainingTime: 0.9,
+    maxNumberOfAttempts: 10,
     // Specialised settings needed by implementations using external task tracking
-    taskTrackingTableName: select(defaultOptions, TASK_TRACKING_TABLE_NAME_SETTING, undefined),
+    // taskTrackingTableName: undefined,
     // Specialised settings needed by default implementations - e.g. DRQ and DMQ stream names
-    deadRecordQueueName: select(defaultOptions, 'deadRecordQueueName', 'DeadRecordQueue'),
-    deadMessageQueueName: select(defaultOptions, 'deadMessageQueueName', 'DeadMessageQueue'),
+    deadRecordQueueName: 'DeadRecordQueue',
+    deadMessageQueueName: 'DeadMessageQueue',
     // Kinesis & DynamoDB.DocumentClient options
-    kinesisOptions: select(defaultOptions, 'kinesisOptions', {}),
-    dynamoDBDocClientOptions: select(defaultOptions, 'dynamoDBDocClientOptions', undefined)
+    kinesisOptions: {},
+    // dynamoDBDocClientOptions: undefined
   };
+  return Objects.merge(defaults, defaultOptions, false, false);
 }
 
 /**
@@ -526,28 +507,26 @@ function loadDefaultKinesisStreamProcessingOptions() {
  */
 function loadDefaultDynamoDBStreamProcessingOptions() {
   const options = require('./dynamodb-options.json');
-  const defaultOptions = options ? options.streamProcessingOptions : undefined;
+  const defaultOptions = options && options.streamProcessingOptions && typeof options.streamProcessingOptions === 'object' ?
+    options.streamProcessingOptions : {};
 
-  return {
+  const defaults = {
     // Generic settings
-    streamType: select(defaultOptions, 'streamType', DYNAMODB_STREAM_TYPE),
-    taskTrackingName: select(defaultOptions, 'taskTrackingName', 'taskTracking'),
-    timeoutAtPercentageOfRemainingTime: select(defaultOptions, 'timeoutAtPercentageOfRemainingTime', 0.9),
-    maxNumberOfAttempts: select(defaultOptions, 'maxNumberOfAttempts', 10),
+    streamType: DYNAMODB_STREAM_TYPE,
+    taskTrackingName: 'taskTracking',
+    timeoutAtPercentageOfRemainingTime: 0.9,
+    maxNumberOfAttempts: 10,
     // Specialised settings needed by default DynamoDB implementations or implementations using external task tracking
-    taskTrackingTableName: select(defaultOptions, TASK_TRACKING_TABLE_NAME_SETTING, 'MessageTaskTracking'),
+    taskTrackingTableName: 'MessageTaskTracking',
     // Specialised settings needed by default implementations - e.g. DRQ and DMQ stream names
-    deadRecordQueueName: select(defaultOptions, 'deadRecordQueueName', 'DeadRecordQueue'),
-    deadMessageQueueName: select(defaultOptions, 'deadMessageQueueName', 'DeadMessageQueue'),
+    deadRecordQueueName: 'DeadRecordQueue',
+    deadMessageQueueName: 'DeadMessageQueue',
     // Kinesis & DynamoDB.DocumentClient options
-    kinesisOptions: select(defaultOptions, 'kinesisOptions', {}),
-    dynamoDBDocClientOptions: select(defaultOptions, 'dynamoDBDocClientOptions', {})
+    kinesisOptions: {},
+    dynamoDBDocClientOptions: {}
   };
-}
 
-function select(opts, propertyName, defaultValue) {
-  const value = opts ? opts[propertyName] : undefined;
-  return isNotBlank(value) ? trim(value) : defaultValue
+  return Objects.merge(defaults, defaultOptions, false, false);
 }
 
 function validateStreamProcessingConfiguration(context) {

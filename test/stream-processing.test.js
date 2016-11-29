@@ -627,360 +627,360 @@ test('useStreamEventRecordAsMessage', t => {
   t.end();
 });
 
-// // =====================================================================================================================
-// // discardUnusableRecordsToDRQ
-// // =====================================================================================================================
-//
-// test('discardUnusableRecordsToDRQ with 0 records', t => {
-//   const context = {
-//     kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const event = samples.sampleKinesisEventWithRecords([record]);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(1);
-//   discardUnusableRecordsToDRQ([], context)
-//     .then(results => {
-//       t.equal(results.length, 0, `discardUnusableRecordsToDRQ results (${results.length}) must be 0`);
-//     })
-//     .catch(err => {
-//       t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
-//     });
-// });
-//
-// test('discardUnusableRecordsToDRQ with 1 record', t => {
-//   const context = {
-//     kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const event = samples.sampleKinesisEventWithRecords([record]);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(2);
-//   discardUnusableRecordsToDRQ([record], context)
-//     .then(results => {
-//       t.equal(results.length, 1, `discardUnusableRecordsToDRQ results (${results.length}) must be 1`);
-//     })
-//     .catch(err => {
-//       t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
-//     });
-// });
-//
-// test('discardUnusableRecordsToDRQ with 2 records', t => {
-//   const context = {
-//     kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//   const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const records = [record, record2];
-//   const event = samples.sampleKinesisEventWithRecords(records);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(3);
-//   discardUnusableRecordsToDRQ(records, context)
-//     .then(results => {
-//       t.equal(results.length, 2, `discardUnusableRecordsToDRQ results (${results.length}) must be 2`);
-//     })
-//     .catch(err => {
-//       t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
-//     });
-// });
-//
-// test('discardUnusableRecordsToDRQ with 1 record and failure', t => {
-//   const error = new Error('Planned failure');
-//   const context = {
-//     kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', error)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const event = samples.sampleKinesisEventWithRecords([record]);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(2);
-//   discardUnusableRecordsToDRQ([record], context)
-//     .then(() => {
-//       t.fail(`discardUnusableRecordsToDRQ expected a failure`);
-//     })
-//     .catch(err => {
-//       t.equal(err, error, `discardUnusableRecordsToDRQ error (${err}) must be ${error}`);
-//     });
-// });
-//
-// // =====================================================================================================================
-// // discardRejectedMessagesToDMQ
-// // =====================================================================================================================
-//
-// test('discardRejectedMessagesToDMQ with 0 messages', t => {
-//   const context = {
-//     kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const event = samples.sampleKinesisEventWithRecords([record]);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(1);
-//   discardRejectedMessagesToDMQ([], context)
-//     .then(results => {
-//       t.equal(results.length, 0, `discardRejectedMessagesToDMQ results (${results.length}) must be 0`);
-//     })
-//     .catch(err => {
-//       t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
-//     });
-// });
-//
-// test('discardRejectedMessagesToDMQ with 1 message', t => {
-//   const context = {
-//     kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//   const message = sampleMessage();
-//   message.taskTracking = {record: record};
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const event = samples.sampleKinesisEventWithRecords([record]);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(2);
-//   discardRejectedMessagesToDMQ([message], context)
-//     .then(results => {
-//       t.equal(results.length, 1, `discardRejectedMessagesToDMQ results (${results.length}) must be 1`);
-//     })
-//     .catch(err => {
-//       t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
-//     });
-// });
-//
-// test('discardRejectedMessagesToDMQ with 2 messages', t => {
-//   const context = {
-//     kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//   const message = sampleMessage();
-//   message.taskTracking = {record: record};
-//
-//   const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//   const message2 = sampleMessage();
-//   message2.taskTracking = {record: record2};
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const records = [record, record2];
-//   const messages = [message, message2];
-//   const event = samples.sampleKinesisEventWithRecords(records);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(3);
-//   discardRejectedMessagesToDMQ(messages, context)
-//     .then(results => {
-//       t.equal(results.length, 2, `discardRejectedMessagesToDMQ results (${results.length}) must be 2`);
-//     })
-//     .catch(err => {
-//       t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
-//     });
-// });
-//
-// test('discardRejectedMessagesToDMQ with 1 record and failure', t => {
-//   const error = new Error('Planned failure');
-//   const context = {
-//     kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', error)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//   const message = sampleMessage();
-//   message.taskTracking = {record: record};
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const event = samples.sampleKinesisEventWithRecords([record]);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(2);
-//   discardRejectedMessagesToDMQ([message], context)
-//     .then(() => {
-//       t.fail(`discardRejectedMessagesToDMQ expected a failure`);
-//     })
-//     .catch(err => {
-//       t.equal(err, error, `discardRejectedMessagesToDMQ error (${err}) must be ${error}`);
-//     });
-// });
-//
-//
-// // =====================================================================================================================
-// // resubmitIncompleteMessagesToKinesis
-// // =====================================================================================================================
-//
-// test('resubmitIncompleteMessagesToKinesis with 0 messages', t => {
-//   const context = {
-//     kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const streamName = 'TestStream_DEV';
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', streamName);
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const event = samples.sampleKinesisEventWithRecords([record]);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(1);
-//   resubmitIncompleteMessagesToKinesis([], [], context)
-//     .then(results => {
-//       t.equal(results.length, 0, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 0`);
-//     })
-//     .catch(err => {
-//       t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
-//     });
-// });
-//
-// test('resubmitIncompleteMessagesToKinesis with 1 message', t => {
-//   const context = {
-//     kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const streamName = 'TestStream_DEV';
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', streamName);
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//   const message = sampleMessage();
-//   message.taskTracking = {record: record};
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const event = samples.sampleKinesisEventWithRecords([record]);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(2);
-//   resubmitIncompleteMessagesToKinesis([message], [message], context)
-//     .then(results => {
-//       t.equal(results.length, 1, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 1`);
-//     })
-//     .catch(err => {
-//       t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
-//     });
-// });
-//
-// test('resubmitIncompleteMessagesToKinesis with 2 messages', t => {
-//   const context = {
-//     kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const streamName = 'TestStream_DEV';
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', streamName);
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//   const message = sampleMessage();
-//   message.taskTracking = {record: record};
-//
-//   const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//   const message2 = sampleMessage();
-//   message2.taskTracking = {record: record2};
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const records = [record, record2];
-//   const messages = [message, message2];
-//   const event = samples.sampleKinesisEventWithRecords(records);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(3);
-//   resubmitIncompleteMessagesToKinesis(messages, messages, context)
-//     .then(results => {
-//       t.equal(results.length, 2, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 2`);
-//     })
-//     .catch(err => {
-//       t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
-//     });
-// });
-//
-// test('resubmitIncompleteMessagesToKinesis with 1 record and failure', t => {
-//   const error = new Error('Planned failure');
-//   const context = {
-//     kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', error)
-//   };
-//   logging.configureDefaultLogging(context);
-//
-//   const streamName = 'TestStream_DEV';
-//   const eventSourceARN = samples.sampleEventSourceArn('eventSourceArnRegion', streamName);
-//   const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-//   const message = sampleMessage();
-//   message.taskTracking = {record: record};
-//
-//   const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-//   const event = samples.sampleKinesisEventWithRecords([record]);
-//   stages.configureDefaultStageHandling(context, false);
-//   stages.configureStage(context, event, awsContext, true);
-//
-//   configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
-//
-//   t.plan(2);
-//   resubmitIncompleteMessagesToKinesis([message], [message], context)
-//     .then(results => {
-//       t.fail(`resubmitIncompleteMessagesToKinesis expected a failure`);
-//     })
-//     .catch(err => {
-//       t.equal(err, error, `resubmitIncompleteMessagesToKinesis error (${err}) must be ${error}`);
-//     });
-// });
+// =====================================================================================================================
+// discardUnusableRecordsToDRQ
+// =====================================================================================================================
+
+test('discardUnusableRecordsToDRQ with 0 records', t => {
+  const context = {
+    kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
+  };
+  logging.configureDefaultLogging(context);
+
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const event = samples.sampleKinesisEventWithRecords([record]);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(1);
+  discardUnusableRecordsToDRQ([], context)
+    .then(results => {
+      t.equal(results.length, 0, `discardUnusableRecordsToDRQ results (${results.length}) must be 0`);
+    })
+    .catch(err => {
+      t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
+    });
+});
+
+test('discardUnusableRecordsToDRQ with 1 record', t => {
+  const context = {
+    kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
+  };
+  logging.configureDefaultLogging(context);
+
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const event = samples.sampleKinesisEventWithRecords([record]);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(2);
+  discardUnusableRecordsToDRQ([record], context)
+    .then(results => {
+      t.equal(results.length, 1, `discardUnusableRecordsToDRQ results (${results.length}) must be 1`);
+    })
+    .catch(err => {
+      t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
+    });
+});
+
+test('discardUnusableRecordsToDRQ with 2 records', t => {
+  const context = {
+    kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
+  };
+  logging.configureDefaultLogging(context);
+
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+  const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const records = [record, record2];
+  const event = samples.sampleKinesisEventWithRecords(records);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(3);
+  discardUnusableRecordsToDRQ(records, context)
+    .then(results => {
+      t.equal(results.length, 2, `discardUnusableRecordsToDRQ results (${results.length}) must be 2`);
+    })
+    .catch(err => {
+      t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
+    });
+});
+
+test('discardUnusableRecordsToDRQ with 1 record and failure', t => {
+  const error = new Error('Planned failure');
+  const context = {
+    kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', error)
+  };
+  logging.configureDefaultLogging(context);
+
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const event = samples.sampleKinesisEventWithRecords([record]);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(2);
+  discardUnusableRecordsToDRQ([record], context)
+    .then(() => {
+      t.fail(`discardUnusableRecordsToDRQ expected a failure`);
+    })
+    .catch(err => {
+      t.equal(err, error, `discardUnusableRecordsToDRQ error (${err}) must be ${error}`);
+    });
+});
+
+// =====================================================================================================================
+// discardRejectedMessagesToDMQ
+// =====================================================================================================================
+
+test('discardRejectedMessagesToDMQ with 0 messages', t => {
+  const context = {
+    kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
+  };
+  logging.configureDefaultLogging(context);
+
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const event = samples.sampleKinesisEventWithRecords([record]);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(1);
+  discardRejectedMessagesToDMQ([], context)
+    .then(results => {
+      t.equal(results.length, 0, `discardRejectedMessagesToDMQ results (${results.length}) must be 0`);
+    })
+    .catch(err => {
+      t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
+    });
+});
+
+test('discardRejectedMessagesToDMQ with 1 message', t => {
+  const context = {
+    kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
+  };
+  logging.configureDefaultLogging(context);
+
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+  const message = sampleMessage();
+  message.taskTracking = {record: record};
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const event = samples.sampleKinesisEventWithRecords([record]);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(2);
+  discardRejectedMessagesToDMQ([message], context)
+    .then(results => {
+      t.equal(results.length, 1, `discardRejectedMessagesToDMQ results (${results.length}) must be 1`);
+    })
+    .catch(err => {
+      t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
+    });
+});
+
+test('discardRejectedMessagesToDMQ with 2 messages', t => {
+  const context = {
+    kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
+  };
+  logging.configureDefaultLogging(context);
+
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+  const message = sampleMessage();
+  message.taskTracking = {record: record};
+
+  const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+  const message2 = sampleMessage();
+  message2.taskTracking = {record: record2};
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const records = [record, record2];
+  const messages = [message, message2];
+  const event = samples.sampleKinesisEventWithRecords(records);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(3);
+  discardRejectedMessagesToDMQ(messages, context)
+    .then(results => {
+      t.equal(results.length, 2, `discardRejectedMessagesToDMQ results (${results.length}) must be 2`);
+    })
+    .catch(err => {
+      t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
+    });
+});
+
+test('discardRejectedMessagesToDMQ with 1 record and failure', t => {
+  const error = new Error('Planned failure');
+  const context = {
+    kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', error)
+  };
+  logging.configureDefaultLogging(context);
+
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+  const message = sampleMessage();
+  message.taskTracking = {record: record};
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const event = samples.sampleKinesisEventWithRecords([record]);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(2);
+  discardRejectedMessagesToDMQ([message], context)
+    .then(() => {
+      t.fail(`discardRejectedMessagesToDMQ expected a failure`);
+    })
+    .catch(err => {
+      t.equal(err, error, `discardRejectedMessagesToDMQ error (${err}) must be ${error}`);
+    });
+});
+
+
+// =====================================================================================================================
+// resubmitIncompleteMessagesToKinesis
+// =====================================================================================================================
+
+test('resubmitIncompleteMessagesToKinesis with 0 messages', t => {
+  const context = {
+    kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
+  };
+  logging.configureDefaultLogging(context);
+
+  const streamName = 'TestStream_DEV';
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const event = samples.sampleKinesisEventWithRecords([record]);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(1);
+  resubmitIncompleteMessagesToKinesis([], [], context)
+    .then(results => {
+      t.equal(results.length, 0, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 0`);
+    })
+    .catch(err => {
+      t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
+    });
+});
+
+test('resubmitIncompleteMessagesToKinesis with 1 message', t => {
+  const context = {
+    kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
+  };
+  logging.configureDefaultLogging(context);
+
+  const streamName = 'TestStream_DEV';
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+  const message = sampleMessage();
+  message.taskTracking = {record: record};
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const event = samples.sampleKinesisEventWithRecords([record]);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(2);
+  resubmitIncompleteMessagesToKinesis([message], [message], context)
+    .then(results => {
+      t.equal(results.length, 1, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 1`);
+    })
+    .catch(err => {
+      t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
+    });
+});
+
+test('resubmitIncompleteMessagesToKinesis with 2 messages', t => {
+  const context = {
+    kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
+  };
+  logging.configureDefaultLogging(context);
+
+  const streamName = 'TestStream_DEV';
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+  const message = sampleMessage();
+  message.taskTracking = {record: record};
+
+  const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+  const message2 = sampleMessage();
+  message2.taskTracking = {record: record2};
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const records = [record, record2];
+  const messages = [message, message2];
+  const event = samples.sampleKinesisEventWithRecords(records);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(3);
+  resubmitIncompleteMessagesToKinesis(messages, messages, context)
+    .then(results => {
+      t.equal(results.length, 2, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 2`);
+    })
+    .catch(err => {
+      t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
+    });
+});
+
+test('resubmitIncompleteMessagesToKinesis with 1 record and failure', t => {
+  const error = new Error('Planned failure');
+  const context = {
+    kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', error)
+  };
+  logging.configureDefaultLogging(context);
+
+  const streamName = 'TestStream_DEV';
+  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
+  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+  const message = sampleMessage();
+  message.taskTracking = {record: record};
+
+  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+  const event = samples.sampleKinesisEventWithRecords([record]);
+  stages.configureDefaultStageHandling(context, false);
+  stages.configureStage(context, event, awsContext, true);
+
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+
+  t.plan(2);
+  resubmitIncompleteMessagesToKinesis([message], [message], context)
+    .then(() => {
+      t.fail(`resubmitIncompleteMessagesToKinesis expected a failure`);
+    })
+    .catch(err => {
+      t.equal(err, error, `resubmitIncompleteMessagesToKinesis error (${err}) must be ${error}`);
+    });
+});

@@ -124,7 +124,7 @@ function configureStreamConsumer(context, settings, options, event, awsContext) 
   // Configure region, stage & AWS context
   configureRegionStageAndAwsContext(context, event, awsContext);
 
-  // Set up a streamConsumer object on the context to tack some of the overall flow state
+  // Set up a streamConsumer object on the context onto which to track some of the overall flow state
   if (!context.streamConsumer) {
     context.streamConsumer = {};
   }

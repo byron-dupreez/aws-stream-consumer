@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.7
+# aws-stream-consumer v1.0.0-beta.8
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -312,6 +312,20 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.0-beta.8
+- Changes to `stream-processing.js` module:
+  - Changed `configureStreamProcessing` function to use `core-functions/objects` module's `copy` and 
+    `merge` functions to ensure that any and all given custom settings and options are not lost
+  - Changed `getDefaultKinesisStreamProcessingSettings`, `getDefaultDynamoDBStreamProcessingSettings`, 
+    `loadDefaultKinesisStreamProcessingOptions` and `loadDefaultDynamoDBStreamProcessingOptions` 
+    functions to use `core-functions/objects` module's `copy` and `merge` functions to ensure that any 
+    and all given custom options are not lost
+- Updated `core-functions` dependency to version 2.0.7
+- Updated `logging-utils` dependency to version 3.0.1
+- Updated `aws-core-utils` dependency to version 5.0.2
+- Updated `task-utils` dependency to version 3.0.3
+- Updated `tape` dependency to 4.6.3
 
 ### 1.0.0-beta.7
 
