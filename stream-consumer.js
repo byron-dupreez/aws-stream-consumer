@@ -77,14 +77,14 @@ module.exports = {
 // =====================================================================================================================
 
 /**
- * @typedef {Object} Settings - configuration settings
+ * @typedef {Object} StreamConsumerSettings - configuration settings
  * @property {LoggingSettings|undefined} [loggingSettings] - optional logging settings to use to configure logging
  * @property {StageHandlingSettings|undefined} [stageHandlingSettings] - optional stage handling settings to use to configure stage handling
  * @property {StreamProcessingSettings|undefined} [streamProcessingSettings] - optional stream processing settings to use to configure stream processing
  */
 
 /**
- * @typedef {Object} Options - configuration options to use if no corresponding settings are provided
+ * @typedef {Object} StreamConsumerOptions - configuration options to use if no corresponding settings are provided
  * @property {LoggingOptions|undefined} [loggingOptions] - optional logging options to use to configure logging
  * @property {StageHandlingOptions|undefined} [stageHandlingOptions] - optional stage handling options to use to configure stage handling
  * @property {StreamProcessingOptions|undefined} [streamProcessingOptions] - optional stream processing options to use to configure stream processing
@@ -109,8 +109,8 @@ function isStreamConsumerConfigured(context) {
  * until the Lambda can be fixed.
  *
  * @param {Object} context - the context onto which to configure a stream consumer's runtime settings
- * @param {Settings|undefined} [settings] - optional configuration settings to use to configure dependencies
- * @param {Options|undefined} [options] - configuration options to use to configure dependencies if no corresponding settings are provided
+ * @param {StreamConsumerSettings|undefined} [settings] - optional configuration settings to use to configure dependencies
+ * @param {StreamConsumerOptions|undefined} [options] - configuration options to use to configure dependencies if no corresponding settings are provided
  * @param {Object} event - the AWS event, which was passed to your lambda
  * @param {Object} awsContext - the AWS context, which was passed to your lambda
  * @return {Object} the context object configured with a stream consumer's runtime settings

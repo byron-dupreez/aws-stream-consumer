@@ -313,6 +313,14 @@ See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) f
 
 ## Changes
 
+### 1.0.0-beta.9
+- Changes to `stream-processing` module:  
+  - Removed `FOR_TESTING_ONLY` exports
+  - Exposed `configureStreamProcessingWithSettings` function as normal (non-testing) export, since its useful externally
+- JSDoc changes to `stream-consumer` module:
+  - Renamed `Settings` typedef to `StreamConsumerSettings`
+  - Renamed `Options` typedef to `StreamConsumerOptions`
+
 ### 1.0.0-beta.8
 - Changes to `stream-processing.js` module:
   - Changed `configureStreamProcessing` function to use `core-functions/objects` module's `copy` and 

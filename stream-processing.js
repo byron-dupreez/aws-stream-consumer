@@ -34,6 +34,7 @@ module.exports = {
   isStreamProcessingConfigured: isStreamProcessingConfigured,
 
   configureStreamProcessing: configureStreamProcessing,
+  configureStreamProcessingWithSettings: configureStreamProcessingWithSettings,
 
   validateStreamProcessingConfiguration: validateStreamProcessingConfiguration,
 
@@ -58,10 +59,6 @@ module.exports = {
   getHandleIncompleteMessagesFunction: getHandleIncompleteMessagesFunction,
   getDiscardUnusableRecordsFunction: getDiscardUnusableRecordsFunction,
   getDiscardRejectedMessagesFunction: getDiscardRejectedMessagesFunction,
-
-  FOR_TESTING_ONLY: {
-    configureStreamProcessingWithSettings: configureStreamProcessingWithSettings,
-  },
 
   /**
    * Default implementations of the stream processing functions, which are NOT meant to be used directly and are ONLY
