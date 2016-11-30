@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.8
+# aws-stream-consumer v1.0.0-beta.10
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -312,6 +312,18 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.0-beta.10
+- Changes to `stream-consumer` module:  
+  - Added `awaitStreamProcessingPartialResults` function to enable waiting for partial stream processing results
+  - Added `awaitAndLogStreamProcessingPartialResults` function to enable waiting for and logging of partial stream processing results
+  - Changed comments and logging still referring to resubmitting of incomplete messages to use the term handling instead
+  - Changed `StreamProcessingResults` typedef to also cater for finalised partial stream processing results:
+    - Renamed `resubmittedIncompleteMessages` property to `handledIncompleteMessages`
+    - Changed `handledIncompleteMessages`, `discardedUnusableRecords` & `discardedRejectedMessages` properties to optional
+    - Added optional `handleIncompleteMessagesError`, `discardUnusableRecordsError` & `discardRejectedMessagesError` properties
+- Changes to `stream-processing` module:  
+  - Changed comments and logging still referring to resubmitting of incomplete messages to use the term handling instead
 
 ### 1.0.0-beta.9
 - Changes to `stream-processing` module:  

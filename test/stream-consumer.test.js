@@ -442,7 +442,7 @@ test('processStreamEvent with 1 message that succeeds all tasks', t => {
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 0, `processStreamEvent results must have ${0} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
 
         t.end();
@@ -515,7 +515,7 @@ test('processStreamEvent with 1 message that succeeds all tasks (despite broken 
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 0, `processStreamEvent results must have ${0} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
 
         t.end();
@@ -591,7 +591,7 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 0, `processStreamEvent results must have ${0} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
 
         t.end();
@@ -664,7 +664,7 @@ test('processStreamEvent with 1 unusable record', t => {
 
         t.equal(results.unusableRecords.length, 1, `processStreamEvent results must have ${1} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 1, `processStreamEvent results must have ${1} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 0, `processStreamEvent results must have ${0} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
 
         t.end();
@@ -743,7 +743,7 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
             .then(resultsOrErrors => {
               const discardedUnusableRecords = resultsOrErrors[0].result;
               const discardUnusableRecordsError = resultsOrErrors[0].error;
-              const resubmittedIncompleteMessages = resultsOrErrors[1].result;
+              const handledIncompleteMessages = resultsOrErrors[1].result;
               const handleIncompleteMessagesError = resultsOrErrors[1].error;
               const discardedRejectedMessages = resultsOrErrors[2].result;
               const discardRejectedMessagesError = resultsOrErrors[2].error;
@@ -753,11 +753,11 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
               }
               t.equal(discardUnusableRecordsError, fatalError, `discardUnusableRecords must fail with ${fatalError}`);
 
-              if (!resubmittedIncompleteMessages || handleIncompleteMessagesError) {
+              if (!handledIncompleteMessages || handleIncompleteMessagesError) {
                 t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
               }
-              if (resubmittedIncompleteMessages) {
-                t.equal(resubmittedIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} resubmitted incomplete records`);
+              if (handledIncompleteMessages) {
+                t.equal(handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete records`);
               }
 
               if (!discardedRejectedMessages || discardRejectedMessagesError) {
@@ -838,7 +838,7 @@ test('processStreamEvent with 1 message that fails its processOne task, resubmit
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 1, `processStreamEvent results must have ${1} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
 
         t.end();
@@ -918,7 +918,7 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const resubmittedIncompleteMessages = resultsOrErrors[1].result;
+            const handledIncompleteMessages = resultsOrErrors[1].result;
             const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
@@ -930,7 +930,7 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (resubmittedIncompleteMessages || !handleIncompleteMessagesError) {
+            if (handledIncompleteMessages || !handleIncompleteMessagesError) {
               t.fail(`handleIncompleteMessages must fail with ${handleIncompleteMessagesError}`);
             }
             t.equal(handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
@@ -1012,7 +1012,7 @@ test('processStreamEvent with 1 message that fails its processAll task, resubmit
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 1, `processStreamEvent results must have ${1} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
 
         t.end();
@@ -1092,7 +1092,7 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const resubmittedIncompleteMessages = resultsOrErrors[1].result;
+            const handledIncompleteMessages = resultsOrErrors[1].result;
             const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
@@ -1104,7 +1104,7 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (resubmittedIncompleteMessages || !handleIncompleteMessagesError) {
+            if (handledIncompleteMessages || !handleIncompleteMessagesError) {
               t.fail(`handleIncompleteMessages must fail with ${handleIncompleteMessagesError}`);
             }
             t.equal(handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
@@ -1204,7 +1204,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 0, `processStreamEvent results must have ${0} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 1, `processStreamEvent results must have ${1} discarded rejected messages`);
 
         t.end();
@@ -1290,7 +1290,7 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const resubmittedIncompleteMessages = resultsOrErrors[1].result;
+            const handledIncompleteMessages = resultsOrErrors[1].result;
             const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
@@ -1302,11 +1302,11 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (!resubmittedIncompleteMessages || handleIncompleteMessagesError) {
+            if (!handledIncompleteMessages || handleIncompleteMessagesError) {
               t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
             }
-            if (resubmittedIncompleteMessages) {
-              t.equal(resubmittedIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} resubmitted incomplete messages`);
+            if (handledIncompleteMessages) {
+              t.equal(handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
             }
 
             if (discardedRejectedMessages || !discardRejectedMessagesError) {
@@ -1389,7 +1389,7 @@ test('processStreamEvent with 1 message that rejects - must discard rejected mes
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 0, `processStreamEvent results must have ${0} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 1, `processStreamEvent results must have ${1} discarded rejected messages`);
 
         t.end();
@@ -1475,7 +1475,7 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const resubmittedIncompleteMessages = resultsOrErrors[1].result;
+            const handledIncompleteMessages = resultsOrErrors[1].result;
             const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
@@ -1487,11 +1487,11 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (!resubmittedIncompleteMessages || handleIncompleteMessagesError) {
+            if (!handledIncompleteMessages || handleIncompleteMessagesError) {
               t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
             }
-            if (resubmittedIncompleteMessages) {
-              t.equal(resubmittedIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} resubmitted incomplete messages`);
+            if (handledIncompleteMessages) {
+              t.equal(handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
             }
 
             if (discardedRejectedMessages || !discardRejectedMessagesError) {
@@ -1608,7 +1608,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 0, `processStreamEvent results must have ${0} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 1, `processStreamEvent results must have ${1} discarded rejected messages`);
 
         t.end();
@@ -1722,7 +1722,7 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const resubmittedIncompleteMessages = resultsOrErrors[1].result;
+            const handledIncompleteMessages = resultsOrErrors[1].result;
             const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
@@ -1734,11 +1734,11 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (!resubmittedIncompleteMessages || handleIncompleteMessagesError) {
+            if (!handledIncompleteMessages || handleIncompleteMessagesError) {
               t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
             }
-            if (resubmittedIncompleteMessages) {
-              t.equal(resubmittedIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} resubmitted incomplete messages`);
+            if (handledIncompleteMessages) {
+              t.equal(handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
             }
 
             if (discardedRejectedMessages || !discardRejectedMessagesError) {
@@ -1848,7 +1848,7 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 1, `processStreamEvent results must have ${1} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
 
         t.end();
@@ -1926,7 +1926,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must resu
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.resubmittedIncompleteMessages.length, 1, `processStreamEvent results must have ${1} resubmitted incomplete records`);
+        t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
         t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
 
         t.end();
@@ -2003,7 +2003,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
           .then(resultsOrErrors => {
             const discardedUnusableRecords = resultsOrErrors[0].result;
             const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const resubmittedIncompleteMessages = resultsOrErrors[1].result;
+            const handledIncompleteMessages = resultsOrErrors[1].result;
             const handleIncompleteMessagesError = resultsOrErrors[1].error;
             const discardedRejectedMessages = resultsOrErrors[2].result;
             const discardRejectedMessagesError = resultsOrErrors[2].error;
@@ -2015,7 +2015,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
               t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
             }
 
-            if (resubmittedIncompleteMessages || !handleIncompleteMessagesError) {
+            if (handledIncompleteMessages || !handleIncompleteMessagesError) {
               t.fail(`handleIncompleteMessages must fail with ${handleIncompleteMessagesError}`);
             }
             t.equal(handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);

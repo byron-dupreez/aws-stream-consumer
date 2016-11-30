@@ -13,6 +13,7 @@ const isNotBlank = Strings.isNotBlank;
 const stringify = Strings.stringify;
 
 const Arrays = require('core-functions/arrays');
+require('core-functions/promises');
 
 // Tasks, task definitions, task states & task utilities
 const states = require('task-utils/task-states');
@@ -50,6 +51,9 @@ module.exports = {
   getProcessAllTasksByName: getProcessAllTasksByName,
   getProcessAllTask: getProcessAllTask,
   setRecord: setRecord,
+
+  awaitStreamProcessingPartialResults: awaitStreamProcessingPartialResults,
+  awaitAndLogStreamProcessingPartialResults: awaitAndLogStreamProcessingPartialResults,
 
   FOR_TESTING_ONLY: {
     logStreamEvent: logStreamEvent,
@@ -164,9 +168,12 @@ function configureRegionStageAndAwsContext(context, event, awsContext) {
  * @property {boolean} processingCompleted - whether or not message processing completed successfully or not
  * @property {boolean} processingFailed - whether or not message processing failed or not
  * @property {boolean} processingTimedOut - whether or not message processing timed out or not
- * @property {Object[]} discardedUnusableRecords - a list of zero or more successfully discarded unusable records
- * @property {Object[]} resubmittedIncompleteMessages - a list of zero or more successfully resubmitted incomplete records
- * @property {Object[]} discardedRejectedMessages - a list of zero or more successfully discarded rejected messages
+ * @property {Object[]|undefined} [handledIncompleteMessages] - an optional list of zero or more successfully handled incomplete messages
+ * @property {Object[]|undefined} [discardedUnusableRecords] - an optional list of zero or more successfully discarded unusable records
+ * @property {Object[]|undefined} [discardedRejectedMessages] - an optional list of zero or more successfully discarded rejected messages
+ * @property {Error|undefined} [handleIncompleteMessagesError] - an optional error with which handle incomplete records failed
+ * @property {Error|undefined} [discardUnusableRecordsError] - an optional error with which discard unusable records failed
+ * @property {Error|undefined} [discardRejectedMessagesError] - an optional error with which discard rejected messages failed
  */
 
 /**
@@ -177,8 +184,8 @@ function configureRegionStageAndAwsContext(context, event, awsContext) {
  * @property {boolean} processingCompleted - whether or not message processing completed successfully or not
  * @property {boolean} processingFailed - whether or not message processing failed or not
  * @property {boolean} processingTimedOut - whether or not message processing timed out or not
+ * @property {Promise.<Object[]|Error>} handleIncompleteMessagesPromise - a promise of either a resolved list of zero or more successfully handled incomplete records or a rejected error
  * @property {Promise.<Object[]|Error>} discardUnusableRecordsPromise - a promise of either a resolved list of zero or more successfully discarded unusable records or a rejected error
- * @property {Promise.<Object[]|Error>} handleIncompleteMessagesPromise - a promise of either a resolved list of zero or more successfully resubmitted incomplete records or a rejected error
  * @property {Promise.<Object[]|Error>} discardRejectedMessagesPromise - a promise of either a resolved list of zero or more successfully discarded rejected messages or a rejected error
  */
 
@@ -246,7 +253,8 @@ function processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsO
   const discardUnusableRecordsPromise = discardAnyUnusableRecords(unusableRecords, records, context);
 
   // Set a timeout to trigger when a configurable percentage of the remaining time in millis is reached, which will give
-  // us a bit of time to resubmit current results before we run out of time to complete everything in this invocation
+  // us a bit of time to finalise at least some of the message processing before we run out of time to complete
+  // everything in this invocation
   const cancellable = {};
   const timeoutPromise = createTimeoutPromise(cancellable, context);
 
@@ -255,8 +263,8 @@ function processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsO
 
   const completedVsTimeoutPromise = Promise.race([completedPromise, timeoutPromise]);
 
-  // Whichever finishes first, finalise message processing as best as possible, e.g. by resubmitting any incomplete
-  // messages back to the source stream (to avoid replaying all of them)
+  // Whichever finishes first, finalise message processing as best as possible, e.g. by handling any incomplete
+  // messages (e.g. by ideally avoiding replaying all of them)
   return completedVsTimeoutPromise
     .then(results => finaliseMessageProcessing(messages, unusableRecords, discardUnusableRecordsPromise, context))
     .catch(err => {
@@ -437,8 +445,7 @@ function processStreamEventRecord(record, processOneTaskDefs, context) {
     return [undefined, undefined, record];
   }
 
-  // Give the message a link to the record it came from, which will be useful if the message
-  // needs to be resubmitted)
+  // Give the message a link to the record it came from
   setRecord(message, record, context);
 
   // Execute all of the incomplete processOne tasks on the given message
@@ -806,8 +813,8 @@ if (Task.taskExecuteFactory === Task.defaultTaskExecuteFactory) {
 
 /**
  * Creates a promise that will timeout when the configured percentage or 90% (if not configured) of the remaining time
- * in millis is reached, which will give us hopefully enough time to at least resubmit our current results before we run
- * out of time to complete everything in this invocation.
+ * in millis is reached, which will give us hopefully enough time to finalise at least some of our message processing
+ * before we run out of time to complete everything in this invocation.
  *
  * @param {Object|undefined|null} [cancellable] - an arbitrary object onto which a cancelTimeout method will be installed
  * @param {Object} context - the context
@@ -950,7 +957,7 @@ function freezeAllTasks(messages, context) {
 /**
  * Attempts to finalise message processing (either after all processing completed successfully or after the configured
  * timeout expired to indicate this Lambda is running out of time) by first marking messages' incomplete tasks that have
- * exceeded the allowed number of attempts as discarded; then freezing all messages' tasks and then by resubmitting all
+ * exceeded the allowed number of attempts as discarded; then freezing all messages' tasks and then by handling all
  * still incomplete messages and discarding any rejected messages using the configured functions for both (see
  * {@linkcode stream-processing-config#configureStreamProcessing})
  * @param {Object[]} messages - the messages to be finalised (if any)
@@ -968,6 +975,7 @@ function finaliseMessageProcessing(messages, unusableRecords, discardUnusableRec
   freezeAllTasks(messages, context);
 
   // Save the task tracking states of all of the messages
+  //TODO
   const saveMessagesTaskTrackingStatePromise = saveAllMessagesTaskTrackingState(messages, context);
 
   // Resubmit any still incomplete messages
@@ -987,23 +995,76 @@ function finaliseMessageProcessing(messages, unusableRecords, discardUnusableRec
   return Promise.all([discardUnusableRecordsPromise, handleIncompleteMessagesPromise, discardRejectedMessagesPromise])
     .then(results => {
       const discardedUnusableRecords = results[0];
-      const resubmittedIncompleteMessages = results[1];
+      const handledIncompleteMessages = results[1];
       const discardedRejectedMessages = results[2];
 
+      streamProcessingResults.handledIncompleteMessages = handledIncompleteMessages;
       streamProcessingResults.discardedUnusableRecords = discardedUnusableRecords;
-      streamProcessingResults.resubmittedIncompleteMessages = resubmittedIncompleteMessages;
       streamProcessingResults.discardedRejectedMessages = discardedRejectedMessages;
 
       return streamProcessingResults;
     })
     .catch(err => {
       err.streamProcessingPartialResults = streamProcessingResults;
-      streamProcessingResults.discardUnusableRecordsPromise = discardUnusableRecordsPromise;
       streamProcessingResults.handleIncompleteMessagesPromise = handleIncompleteMessagesPromise;
+      streamProcessingResults.discardUnusableRecordsPromise = discardUnusableRecordsPromise;
       streamProcessingResults.discardRejectedMessagesPromise = discardRejectedMessagesPromise;
 
       return Promise.reject(err);
     });
+}
+
+/**
+ * If the given error has stream processing partial results, then returns a promise that will wait for all of the stream
+ * processing partial results' promises to complete and then return the finalised results; otherwise just returns a
+ * promise that will return undefined
+ * @param {Error} error - the error with which stream processing ended
+ * @param {StreamProcessingPartialResults} [error.streamProcessingPartialResults] - the optional stream processing
+ * partial results attached to the error
+ * @returns {Promise.<StreamProcessingResults|undefined>} a promise of the finalised stream processing results (if any)
+ * or undefined (if none)
+ */
+function awaitStreamProcessingPartialResults(error) {
+  if (error.streamProcessingPartialResults) {
+    const partialResults = error.streamProcessingPartialResults;
+    const results = {
+      messages: partialResults.messages,
+      unusableRecords: partialResults.unusableRecords,
+      processingCompleted: partialResults.processingCompleted,
+      processingFailed: partialResults.processingFailed,
+      processingTimedOut: partialResults.processingTimedOut
+    };
+
+    return Promise.every(partialResults.handleIncompleteMessagesPromise, partialResults.discardUnusableRecordsPromise, partialResults.discardRejectedMessagesPromise)
+      .then(resultsOrErrors => {
+        results.discardedUnusableRecords = resultsOrErrors[0].result;
+        results.discardUnusableRecordsError = resultsOrErrors[0].error;
+        results.handledIncompleteMessages = resultsOrErrors[1].result;
+        results.handleIncompleteMessagesError = resultsOrErrors[1].error;
+        results.discardedRejectedMessages = resultsOrErrors[2].result;
+        results.discardRejectedMessagesError = resultsOrErrors[2].error;
+        return results;
+      });
+
+  } else {
+    return Promise.resolve(undefined);
+  }
+}
+
+/**
+ * Awaits and then logs any partial stream processing results on the given error using the given context.
+ * @param {Error} error - the error with which stream processing ended
+ * @param {StreamProcessingPartialResults} [error.streamProcessingPartialResults] - the optional stream processing
+ * partial results attached to the error
+ * @param {Object} context - the context to use
+ * @returns {Promise.<StreamProcessingResults|undefined>} a promise of the finalised stream processing results (if any)
+ * or undefined (if none)
+ */
+function awaitAndLogStreamProcessingPartialResults(error, context) {
+  return awaitStreamProcessingPartialResults(error).then(results => {
+    context.log(results ? JSON.stringify(results) : 'No stream processing partial results available');
+    return results;
+  });
 }
 
 function isProcessingCompleted(context) {
@@ -1057,7 +1118,7 @@ function saveAllMessagesTaskTrackingState(messages, context) {
     return Promise.resolve([]);
   }
 
-  // Get the configured handleIncompleteMessages function to be used to do the actual resubmission
+  // Get the configured saveTaskTrackingState function to be used to do the actual saving
   const saveTaskTrackingState = streamProcessing.getSaveTaskTrackingStateFunction(context);
 
   if (saveTaskTrackingState) {
@@ -1104,22 +1165,22 @@ function handleAnyIncompleteMessages(messages, context) {
 
   if (i <= 0) {
     // All messages have completed, so nothing needs to be bounced back to Kinesis and we are finally done
-    context.info(`No incomplete messages to resubmit out of ${ms}`);
+    context.info(`No incomplete messages to handle out of ${ms}`);
     return Promise.resolve([]);
   }
 
-  // Get the configured handleIncompleteMessages function to be used to do the actual resubmission
+  // Get the configured handleIncompleteMessages function to be used to do the actual handling of the incomplete messages
   const handleIncompleteMessages = streamProcessing.getHandleIncompleteMessagesFunction(context);
 
   if (handleIncompleteMessages) {
-    // Trigger the configured handleIncompleteMessages function to do the actual resubmitting
+    // Trigger the configured handleIncompleteMessages function to do the actual handling of the incomplete messages
     return Promise.try(() => Promise.allOrOne(handleIncompleteMessages(messages, incompleteMessages, context)))
       .then(results => {
         context.info(`Handled ${isOfMs} - results (${stringify(results)}`);
         return incompleteMessages;
       })
       .catch(err => {
-        // If resubmit fails, then no choice left, but to throw an exception back to Lambda to force a replay of the batch of messages (BAD!) :(
+        // If handle fails, then no choice left, but to throw an exception back to Lambda to force a replay of the batch of messages (BAD!) :(
         const fnName = isNotBlank(handleIncompleteMessages.name) ? handleIncompleteMessages.name : 'handleIncompleteMessages';
         context.error(`Failed to handle ${isOfMs} using the configured ${fnName} function - error (${stringify(err)} - forced to trigger a replay`, err.stack);
         throw err;

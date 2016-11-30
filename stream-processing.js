@@ -558,7 +558,7 @@ function validateStreamProcessingConfiguration(context) {
   }
 
   if (!getHandleIncompleteMessagesFunction(context)) {
-    const errMsg = `FATAL - Cannot resubmit any incomplete messages without a valid, configured handleIncompleteMessages function. Fix your Lambda by configuring a valid streamProcessing.handleIncompleteMessages function on its context via configureStreamProcessing and redeploy ASAP, since this issue is blocking all of your stream's shards!`;
+    const errMsg = `FATAL - Cannot handle any incomplete messages without a valid, configured handleIncompleteMessages function. Fix your Lambda by configuring a valid streamProcessing.handleIncompleteMessages function on its context via configureStreamProcessing and redeploy ASAP, since this issue is blocking all of your stream's shards!`;
     (context.error ? context.error : console.error)(errMsg);
     throw new Error(errMsg);
   }
