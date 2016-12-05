@@ -15,7 +15,7 @@
   "streamProcessingOptions": {
     "streamType": "dynamodb",
     "taskTrackingName": "taskTracking",
-    "timeoutAtPercentageOfRemainingTime": 0.9,
+    "timeoutAtPercentageOfRemainingTime": 0.8,
     "maxNumberOfAttempts": 10,
     "taskTrackingTableName": "MessageTaskTracking",
     "deadRecordQueueName": "DeadRecordQueue",

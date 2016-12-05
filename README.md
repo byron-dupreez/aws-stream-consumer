@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.10
+# aws-stream-consumer v1.0.0-beta.11
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -313,6 +313,44 @@ See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) f
 
 ## Changes
 
+### 1.0.0-beta.11
+- Changes to `stream-consumer` module:
+ - Fixed logging defect in `awaitAndLogStreamProcessingPartialResults` function
+ - Renamed `StreamProcessingResults` typedef to `StreamConsumerResults`
+ - Changes to `StreamConsumerResults` typedef:
+   - Removed `processingCompleted`, `processingFailed` & `processingTimedOut` properties
+   - Added `processing` & `finalising` task properties
+   - Added `savedMessagesTaskTrackingState` & `saveMessagesTaskTrackingStateError` properties
+   - Added `partial`, `saveMessagesTaskTrackingStatePromise`, `handleIncompleteMessagesPromise`, 
+     `discardUnusableRecordsPromise` & `discardRejectedMessagesPromise` properties
+ - Renamed `StreamProcessingError` typedef to `StreamConsumerError`
+ - Changes to `StreamConsumerError` typedef:
+   - Renamed `streamProcessingPartialResults` property to `streamConsumerResults` and made it optional
+ - Added `SummarizedStreamComsumerResults` typedef
+ - Added `summarizeStreamConsumerResults` function to create a summary from `StreamConsumerResults`
+ - Removed internal `isProcessingCompleted`, `isProcessingFailed` & `isProcessingTimedOut` functions
+ - Renamed `awaitStreamProcessingPartialResults` function to `awaitStreamConsumerResults`
+ - Renamed `awaitAndLogStreamProcessingPartialResults` function to `awaitAndLogStreamConsumerResults`
+ - Changed `processStreamEvents` to track the processing phase state via a processing task
+ - Refactored `createTimeoutPromise` & `createCompletedPromise` functions to accept and update the state of 
+   the current phase task and to enable them to also be used during the finalising phase
+ - Changed `finaliseMessageProcessing` to track the finalising phase state via a finalising task, to wait 
+   for all finalising promises to resolve/reject and to set up a timeout race with the finalising promises
+ - Added internal `timeoutMessagesProcessOneAndAllTasks`, `completeStreamConsumerResults`, 
+   `logStreamConsumerResults`, `addPartialStreamConsumerResultsToError`, `logPartialStreamConsumerResults`, 
+   `getPhaseTasksByName` & `getPhaseTask` functions
+ - Changed `awaitStreamConsumerResults` & `awaitAndLogStreamConsumerResults` functions to accept 
+   `StreamConsumerResults` instead of errors
+ - Added calls to new internal `completeStreamConsumerResults`, `logStreamConsumerResults`, 
+   `addPartialStreamConsumerResultsToError` & `logPartialStreamConsumerResults` functions to 
+   `finaliseMessageProcessing` function to update and log stream consumer results & summaries
+ - Added asynchronous calls to `awaitAndLogStreamConsumerResults` function to `finaliseMessageProcessing`
+   via the new `logPartialStreamConsumerResults` function
+- Updated `core-functions` dependency to version 2.0.10
+- Updated `logging-utils` dependency to version 3.0.5 
+- Updated `task-utils` dependency to version 4.0.3 
+- Updated `aws-core-utils` dependency to version 5.0.5
+ 
 ### 1.0.0-beta.10
 - Changes to `stream-consumer` module:  
   - Added `awaitStreamProcessingPartialResults` function to enable waiting for partial stream processing results

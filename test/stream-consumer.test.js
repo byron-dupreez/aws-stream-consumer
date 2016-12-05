@@ -131,7 +131,7 @@ function sampleExecuteOneAsync(ms, mustRejectWithError, callback) {
     context.info(`${executeOneAsync.name} started processing message (${stringify(message)})`);
     return Promise.delay(ms)
       .then(
-        result => {
+        () => {
           if (typeof callback === 'function') {
             callback(message, context);
           }
@@ -185,7 +185,7 @@ function sampleExecuteAllAsync(ms, mustRejectWithError, callback) {
     context.info(`${executeAllAsync.name} started processing messages ${stringify(messages)}`);
     return Promise.delay(ms)
       .then(
-        result => {
+        () => {
           if (typeof callback === 'function') {
             callback(message, context);
           }
@@ -432,13 +432,13 @@ test('processStreamEvent with 1 message that succeeds all tasks', t => {
         t.pass(`processStreamEvent must resolve`);
         const messages = results.messages;
         t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Success, taskStates.Success, context);
+        checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.CompletedState, context);
         t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
         t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
@@ -505,13 +505,13 @@ test('processStreamEvent with 1 message that succeeds all tasks (despite broken 
         t.pass(`processStreamEvent must resolve`);
         const messages = results.messages;
         t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Success, taskStates.Success, context);
+        checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.CompletedState, context);
         t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
         t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
@@ -580,14 +580,14 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
         t.pass(`processStreamEvent must resolve`);
         const messages = results.messages;
         t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Success, taskStates.Success, context);
+        checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.CompletedState, context);
         for (let i = 0; i < messages.length; ++i) {
           t.equal(messages[i].taskTracking.ones.Task1.attempts, 1, `message ${messages[i].id} Task1 attempts must be 1`);
           t.equal(messages[i].taskTracking.alls.Task2.attempts, 1, `message ${messages[i].id} Task2 attempts must be 1`);
         }
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
@@ -658,9 +658,9 @@ test('processStreamEvent with 1 unusable record', t => {
         const messages = results.messages;
         t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
         t.equal(results.unusableRecords.length, 1, `processStreamEvent results must have ${1} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 1, `processStreamEvent results must have ${1} discarded unusable records`);
@@ -730,45 +730,36 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
           t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
           t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
 
-          const results = err.streamProcessingPartialResults;
-          const messages = results.messages;
-          t.equal(messages.length, 0, `processStreamEvent results must have ${0} messages`);
-          t.equal(results.unusableRecords.length, 1, `processStreamEvent results must have ${1} unusable records`);
+          streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+            const messages = results.messages;
+            t.equal(messages.length, 0, `processStreamEvent results must have ${0} messages`);
+            t.equal(results.unusableRecords.length, 1, `processStreamEvent results must have ${1} unusable records`);
 
-          t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-          t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-          t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+            t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+            t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+            t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-          Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
-            .then(resultsOrErrors => {
-              const discardedUnusableRecords = resultsOrErrors[0].result;
-              const discardUnusableRecordsError = resultsOrErrors[0].error;
-              const handledIncompleteMessages = resultsOrErrors[1].result;
-              const handleIncompleteMessagesError = resultsOrErrors[1].error;
-              const discardedRejectedMessages = resultsOrErrors[2].result;
-              const discardRejectedMessagesError = resultsOrErrors[2].error;
+            if (results.discardedUnusableRecords || !results.discardUnusableRecordsError) {
+              t.fail(`discardUnusableRecords must fail`);
+            }
+            t.equal(results.discardUnusableRecordsError, fatalError, `discardUnusableRecords must fail with ${fatalError}`);
 
-              if (discardedUnusableRecords || !discardUnusableRecordsError) {
-                t.fail(`discardUnusableRecords must fail`);
-              }
-              t.equal(discardUnusableRecordsError, fatalError, `discardUnusableRecords must fail with ${fatalError}`);
+            if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
+            }
+            if (results.handledIncompleteMessages) {
+              t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete records`);
+            }
 
-              if (!handledIncompleteMessages || handleIncompleteMessagesError) {
-                t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
-              }
-              if (handledIncompleteMessages) {
-                t.equal(handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete records`);
-              }
+            if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
+              t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
+            }
+            if (results.discardedRejectedMessages) {
+              t.equal(results.discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
+            }
 
-              if (!discardedRejectedMessages || discardRejectedMessagesError) {
-                t.fail(`discardRejectedMessages must not fail with ${discardRejectedMessagesError}`);
-              }
-              if (discardedRejectedMessages) {
-                t.equal(discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
-              }
-
-              t.end();
-            });
+            t.end();
+          });
         }
       );
   } catch
@@ -828,13 +819,13 @@ test('processStreamEvent with 1 message that fails its processOne task, resubmit
         const n = 1;
         const messages = results.messages;
         t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Failed, taskStates.Success, context);
+        checkMessagesTasksStates(t, messages, taskStates.Failed, taskStates.CompletedState, context);
         t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
         t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
@@ -905,45 +896,36 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
         t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
         t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
 
-        const results = err.streamProcessingPartialResults;
-        const messages = results.messages;
-        t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+          const messages = results.messages;
+          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
-          .then(resultsOrErrors => {
-            const discardedUnusableRecords = resultsOrErrors[0].result;
-            const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const handledIncompleteMessages = resultsOrErrors[1].result;
-            const handleIncompleteMessagesError = resultsOrErrors[1].error;
-            const discardedRejectedMessages = resultsOrErrors[2].result;
-            const discardRejectedMessagesError = resultsOrErrors[2].error;
+          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+          }
+          if (results.discardedUnusableRecords) {
+            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+          }
 
-            if (!discardedUnusableRecords || discardUnusableRecordsError) {
-              t.fail(`discardUnusableRecords must not fail with ${discardUnusableRecordsError}`);
-            }
-            if (discardedUnusableRecords) {
-              t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-            }
+          if (results.handledIncompleteMessages || !results.handleIncompleteMessagesError) {
+            t.fail(`handleIncompleteMessages must fail with ${results.handleIncompleteMessagesError}`);
+          }
+          t.equal(results.handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
 
-            if (handledIncompleteMessages || !handleIncompleteMessagesError) {
-              t.fail(`handleIncompleteMessages must fail with ${handleIncompleteMessagesError}`);
-            }
-            t.equal(handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
+          if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
+            t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
+          }
+          if (results.discardedRejectedMessages) {
+            t.equal(results.discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
+          }
 
-            if (!discardedRejectedMessages || discardRejectedMessagesError) {
-              t.fail(`discardRejectedMessages must not fail with ${discardRejectedMessagesError}`);
-            }
-            if (discardedRejectedMessages) {
-              t.equal(discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
-            }
-
-            t.end();
-          });
+          t.end();
+        });
       });
 
   } catch (err) {
@@ -1002,13 +984,13 @@ test('processStreamEvent with 1 message that fails its processAll task, resubmit
         const n = 1;
         const messages = results.messages;
         t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Success, taskStates.Failure, context);
+        checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.FailedState, context);
         t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
         t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
@@ -1079,45 +1061,36 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
         t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
         t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
 
-        const results = err.streamProcessingPartialResults;
-        const messages = results.messages;
-        t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+          const messages = results.messages;
+          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
-          .then(resultsOrErrors => {
-            const discardedUnusableRecords = resultsOrErrors[0].result;
-            const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const handledIncompleteMessages = resultsOrErrors[1].result;
-            const handleIncompleteMessagesError = resultsOrErrors[1].error;
-            const discardedRejectedMessages = resultsOrErrors[2].result;
-            const discardRejectedMessagesError = resultsOrErrors[2].error;
+          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+          }
+          if (results.discardedUnusableRecords) {
+            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+          }
 
-            if (!discardedUnusableRecords || discardUnusableRecordsError) {
-              t.fail(`discardUnusableRecords must not fail with ${discardUnusableRecordsError}`);
-            }
-            if (discardedUnusableRecords) {
-              t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-            }
+          if (results.handledIncompleteMessages || !results.handleIncompleteMessagesError) {
+            t.fail(`handleIncompleteMessages must fail with ${results.handleIncompleteMessagesError}`);
+          }
+          t.equal(results.handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
 
-            if (handledIncompleteMessages || !handleIncompleteMessagesError) {
-              t.fail(`handleIncompleteMessages must fail with ${handleIncompleteMessagesError}`);
-            }
-            t.equal(handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
+          if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
+            t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
+          }
+          if (results.discardedRejectedMessages) {
+            t.equal(results.discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
+          }
 
-            if (!discardedRejectedMessages || discardRejectedMessagesError) {
-              t.fail(`discardRejectedMessages must not fail with ${discardRejectedMessagesError}`);
-            }
-            if (discardedRejectedMessages) {
-              t.equal(discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
-            }
-
-            t.end();
-          });
+          t.end();
+        });
       });
 
   } catch (err) {
@@ -1194,13 +1167,13 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
         const n = 1;
         const messages = results.messages;
         t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Abandoned, taskStates.Success, context);
+        checkMessagesTasksStates(t, messages, taskStates.Abandoned, taskStates.CompletedState, context);
         t.equal(messages[0].taskTracking.ones.TaskX.attempts, 100, `TaskX attempts must be 100`);
         t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
@@ -1277,45 +1250,36 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
         t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
         t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
 
-        const results = err.streamProcessingPartialResults;
-        const messages = results.messages;
-        t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+          const messages = results.messages;
+          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
-          .then(resultsOrErrors => {
-            const discardedUnusableRecords = resultsOrErrors[0].result;
-            const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const handledIncompleteMessages = resultsOrErrors[1].result;
-            const handleIncompleteMessagesError = resultsOrErrors[1].error;
-            const discardedRejectedMessages = resultsOrErrors[2].result;
-            const discardRejectedMessagesError = resultsOrErrors[2].error;
+          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+          }
+          if (results.discardedUnusableRecords) {
+            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+          }
 
-            if (!discardedUnusableRecords || discardUnusableRecordsError) {
-              t.fail(`discardUnusableRecords must not fail with ${discardUnusableRecordsError}`);
-            }
-            if (discardedUnusableRecords) {
-              t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-            }
+          if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
+            t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
+          }
+          if (results.handledIncompleteMessages) {
+            t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
+          }
 
-            if (!handledIncompleteMessages || handleIncompleteMessagesError) {
-              t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
-            }
-            if (handledIncompleteMessages) {
-              t.equal(handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
-            }
+          if (results.discardedRejectedMessages || !results.discardRejectedMessagesError) {
+            t.fail(`discardRejectedMessages must fail with ${results.discardRejectedMessagesError}`);
+          }
+          t.equal(results.discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
 
-            if (discardedRejectedMessages || !discardRejectedMessagesError) {
-              t.fail(`discardRejectedMessages must fail with ${discardRejectedMessagesError}`);
-            }
-            t.equal(discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
-
-            t.end();
-          });
+          t.end();
+        });
       });
   } catch (err) {
     t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
@@ -1350,6 +1314,7 @@ test('processStreamEvent with 1 message that rejects - must discard rejected mes
   const rejectError = new Error('Rejecting message');
   const executeOneAsync = sampleExecuteOneAsync(5, undefined, (msg, context) => {
     // trigger a rejection from inside
+    context.info(`Triggering an internal reject`);
     msg.taskTracking.ones.Task1.reject('Forcing reject', rejectError, true);
   });
   const taskDef1 = TaskDef.defineTask('Task1', executeOneAsync);
@@ -1379,13 +1344,13 @@ test('processStreamEvent with 1 message that rejects - must discard rejected mes
         const n = 1;
         const messages = results.messages;
         t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Rejected, taskStates.Success, context);
+        checkMessagesTasksStates(t, messages, taskStates.Rejected, taskStates.CompletedState, context);
         t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
         t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
@@ -1429,6 +1394,7 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
   const rejectError = new Error('Rejecting message');
   const executeOneAsync = sampleExecuteOneAsync(5, undefined, (msg, context) => {
     // trigger a rejection from inside
+    context.info(`Triggering an internal reject`);
     msg.taskTracking.ones.Task1.reject('Forcing reject', rejectError, true);
   });
   const taskDef1 = TaskDef.defineTask('Task1', executeOneAsync);
@@ -1462,45 +1428,36 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
         t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
         t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
 
-        const results = err.streamProcessingPartialResults;
-        const messages = results.messages;
-        t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+          const messages = results.messages;
+          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
-          .then(resultsOrErrors => {
-            const discardedUnusableRecords = resultsOrErrors[0].result;
-            const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const handledIncompleteMessages = resultsOrErrors[1].result;
-            const handleIncompleteMessagesError = resultsOrErrors[1].error;
-            const discardedRejectedMessages = resultsOrErrors[2].result;
-            const discardRejectedMessagesError = resultsOrErrors[2].error;
+          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+          }
+          if (results.discardedUnusableRecords) {
+            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+          }
 
-            if (!discardedUnusableRecords || discardUnusableRecordsError) {
-              t.fail(`discardUnusableRecords must not fail with ${discardUnusableRecordsError}`);
-            }
-            if (discardedUnusableRecords) {
-              t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-            }
+          if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
+            t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
+          }
+          if (results.handledIncompleteMessages) {
+            t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
+          }
 
-            if (!handledIncompleteMessages || handleIncompleteMessagesError) {
-              t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
-            }
-            if (handledIncompleteMessages) {
-              t.equal(handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
-            }
+          if (results.discardedRejectedMessages || !results.discardRejectedMessagesError) {
+            t.fail(`discardRejectedMessages must fail with ${results.discardRejectedMessagesError}`);
+          }
+          t.equal(results.discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
 
-            if (discardedRejectedMessages || !discardRejectedMessagesError) {
-              t.fail(`discardRejectedMessages must fail with ${discardRejectedMessagesError}`);
-            }
-            t.equal(discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
-
-            t.end();
-          });
+          t.end();
+        });
       });
 
   } catch (err) {
@@ -1508,7 +1465,6 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
     t.end(err);
   }
 });
-
 
 // =====================================================================================================================
 // processStreamEvent with message(s) exceeding max number of attempts on all tasks, must discard Discarded message(s)
@@ -1602,9 +1558,9 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
         t.equal(messages[0].taskTracking.ones.Task1.attempts, maxNumberOfAttempts, `Task1 attempts must be ${maxNumberOfAttempts}`);
         t.equal(messages[0].taskTracking.alls.Task2.attempts, maxNumberOfAttempts, `Task2 attempts must be ${maxNumberOfAttempts}`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
@@ -1623,7 +1579,6 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
     t.end(err);
   }
 });
-
 
 test('processStreamEvent with 1 message that exceeds max number of attempts on all its tasks, but cannot discard message must fail', t => {
   const context = {};
@@ -1700,8 +1655,8 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
     t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
-      .then(messages => {
-        const n = messages.length;
+      .then(results => {
+        const n = results.messages.length;
         t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
         t.end();
       })
@@ -1709,45 +1664,36 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
         t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
         t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
 
-        const results = err.streamProcessingPartialResults;
-        const messages = results.messages;
-        t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+          const messages = results.messages;
+          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
-          .then(resultsOrErrors => {
-            const discardedUnusableRecords = resultsOrErrors[0].result;
-            const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const handledIncompleteMessages = resultsOrErrors[1].result;
-            const handleIncompleteMessagesError = resultsOrErrors[1].error;
-            const discardedRejectedMessages = resultsOrErrors[2].result;
-            const discardRejectedMessagesError = resultsOrErrors[2].error;
+          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+          }
+          if (results.discardedUnusableRecords) {
+            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+          }
 
-            if (!discardedUnusableRecords || discardUnusableRecordsError) {
-              t.fail(`discardUnusableRecords must not fail with ${discardUnusableRecordsError}`);
-            }
-            if (discardedUnusableRecords) {
-              t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-            }
+          if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
+            t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
+          }
+          if (results.handledIncompleteMessages) {
+            t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
+          }
 
-            if (!handledIncompleteMessages || handleIncompleteMessagesError) {
-              t.fail(`handleIncompleteMessages must not fail with ${handleIncompleteMessagesError}`);
-            }
-            if (handledIncompleteMessages) {
-              t.equal(handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
-            }
+          if (results.discardedRejectedMessages || !results.discardRejectedMessagesError) {
+            t.fail(`discardRejectedMessages must fail with ${results.discardRejectedMessagesError}`);
+          }
+          t.equal(results.discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
 
-            if (discardedRejectedMessages || !discardRejectedMessagesError) {
-              t.fail(`discardRejectedMessages must fail with ${discardRejectedMessagesError}`);
-            }
-            t.equal(discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
-
-            t.end();
-          });
+          t.end();
+        });
       });
 
   } catch (err) {
@@ -1842,9 +1788,9 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
         t.equal(messages[0].taskTracking.ones.Task1.attempts, maxNumberOfAttempts - 1, `Task1 attempts must be ${maxNumberOfAttempts - 1}`);
         t.equal(messages[0].taskTracking.alls.Task2.attempts, maxNumberOfAttempts, `Task1 attempts must be ${maxNumberOfAttempts}`);
 
-        t.ok(results.processingCompleted, `processStreamEvent processing must be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processingTimedOut, `processStreamEvent processing must not be timed-out`);
+        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
@@ -1863,7 +1809,6 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
     t.end(err);
   }
 });
-
 
 // =====================================================================================================================
 // processStreamEvent with 1 message and triggered timeout promise, must resubmit incomplete message
@@ -1916,13 +1861,13 @@ test('processStreamEvent with 1 message and triggered timeout promise, must resu
         const n = 1;
         const messages = results.messages;
         t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Unstarted, taskStates.Unstarted, context);
+        checkMessagesTasksStates(t, messages, taskStates.TimedOut, taskStates.TimedOut, context);
         t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
         t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
-        t.notOk(results.processingCompleted, `processStreamEvent processing must not be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.ok(results.processingTimedOut, `processStreamEvent processing must be timed-out`);
+        t.notOk(results.processing.completed, `processStreamEvent processing must not be completed`);
+        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+        t.ok(results.processing.timedOut, `processStreamEvent processing must be timed-out`);
 
         t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
         t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
@@ -1990,45 +1935,36 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
         t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
         t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
 
-        const results = err.streamProcessingPartialResults;
-        const messages = results.messages;
-        t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+          const messages = results.messages;
+          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
 
-        t.notOk(results.processingCompleted, `processStreamEvent processing must not be completed`);
-        t.notOk(results.processingFailed, `processStreamEvent processing must not be failed`);
-        t.ok(results.processingTimedOut, `processStreamEvent processing must be timed-out`);
+          t.notOk(results.processing.completed, `processStreamEvent processing must not be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.ok(results.processing.timedOut, `processStreamEvent processing must be timed-out`);
 
-        Promise.every(results.discardUnusableRecordsPromise, results.handleIncompleteMessagesPromise, results.discardRejectedMessagesPromise)
-          .then(resultsOrErrors => {
-            const discardedUnusableRecords = resultsOrErrors[0].result;
-            const discardUnusableRecordsError = resultsOrErrors[0].error;
-            const handledIncompleteMessages = resultsOrErrors[1].result;
-            const handleIncompleteMessagesError = resultsOrErrors[1].error;
-            const discardedRejectedMessages = resultsOrErrors[2].result;
-            const discardRejectedMessagesError = resultsOrErrors[2].error;
+          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+          }
+          if (results.discardedUnusableRecords) {
+            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+          }
 
-            if (!discardedUnusableRecords || discardUnusableRecordsError) {
-              t.fail(`discardUnusableRecords must not fail with ${discardUnusableRecordsError}`);
-            }
-            if (discardedUnusableRecords) {
-              t.equal(discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-            }
+          if (results.handledIncompleteMessages || !results.handleIncompleteMessagesError) {
+            t.fail(`handleIncompleteMessages must fail with ${results.handleIncompleteMessagesError}`);
+          }
+          t.equal(results.handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
 
-            if (handledIncompleteMessages || !handleIncompleteMessagesError) {
-              t.fail(`handleIncompleteMessages must fail with ${handleIncompleteMessagesError}`);
-            }
-            t.equal(handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
+          if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
+            t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
+          }
+          if (results.discardedRejectedMessages) {
+            t.equal(results.discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
+          }
 
-            if (!discardedRejectedMessages || discardRejectedMessagesError) {
-              t.fail(`discardRejectedMessages must not fail with ${discardRejectedMessagesError}`);
-            }
-            if (discardedRejectedMessages) {
-              t.equal(discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
-            }
-
-            t.end();
-          });
+          t.end();
+        });
 
       });
 
@@ -2037,4 +1973,3 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
     t.end(err);
   }
 });
-

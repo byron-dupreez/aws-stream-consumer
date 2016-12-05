@@ -17,6 +17,7 @@ require('core-functions/promises');
 
 // Tasks, task definitions, task states & task utilities
 const states = require('task-utils/task-states');
+const TimeoutError = states.TimeoutError;
 const taskDefs = require('task-utils/task-defs');
 const TaskDef = taskDefs.TaskDef;
 const Tasks = require('task-utils/tasks');
@@ -28,6 +29,15 @@ const logging = require('logging-utils');
 //const stageHandling = require('aws-core-utils/stages');
 const streamProcessing = require('./stream-processing');
 //const kinesisCache = require('aws-core-utils/kinesis-cache');
+
+// Phase task names
+const PROCESSING_TASK_NAME = 'processing';
+const FINALISING_TASK_NAME = 'finalising';
+// Finalising sub-task names
+// const SAVE_MESSAGES_TASK_TRACKING_STATE_TASK_NAME = 'saveMessagesTaskTrackingState';
+// const HANDLE_INCOMPLETE_MESSAGES_TASK_NAME = 'handleIncompleteMessages';
+// const DISCARD_UNUSABLE_RECORDS_TASK_NAME = 'discardUnusableRecords';
+// const DISCARD_REJECTED_MESSAGES_TASK_NAME = 'discardRejectedMessages';
 
 /**
  * Utilities and functions to be used to robustly consume messages from an AWS Kinesis or DynamoDB event stream.
@@ -52,8 +62,9 @@ module.exports = {
   getProcessAllTask: getProcessAllTask,
   setRecord: setRecord,
 
-  awaitStreamProcessingPartialResults: awaitStreamProcessingPartialResults,
-  awaitAndLogStreamProcessingPartialResults: awaitAndLogStreamProcessingPartialResults,
+  summarizeStreamConsumerResults: summarizeStreamConsumerResults,
+  awaitStreamConsumerResults: awaitStreamConsumerResults,
+  awaitAndLogStreamConsumerResults: awaitAndLogStreamConsumerResults,
 
   FOR_TESTING_ONLY: {
     logStreamEvent: logStreamEvent,
@@ -161,38 +172,48 @@ function configureRegionStageAndAwsContext(context, event, awsContext) {
 // =====================================================================================================================
 
 /**
- * @typedef {Object} StreamProcessingResults - the stream processing results, which are returned when stream processing
+ * @typedef {Object} StreamConsumerResults - the stream consumer results, which are returned when the stream consumer
  * completes successfully
  * @property {Object[]} messages - a list of zero or more successfully extracted message objects
  * @property {Object[]} unusableRecords - a list of zero or more unusable records
- * @property {boolean} processingCompleted - whether or not message processing completed successfully or not
- * @property {boolean} processingFailed - whether or not message processing failed or not
- * @property {boolean} processingTimedOut - whether or not message processing timed out or not
+ * @property {Task} processing - a task that tracks the state of the processing phase
+ * @property {Task|undefined} [finalising] - a task that tracks the state of the finalising phase
+ * @property {Object[]|undefined} [savedMessagesTaskTrackingState] - an optional list of zero or more messages that had their task tracking state successfully saved
  * @property {Object[]|undefined} [handledIncompleteMessages] - an optional list of zero or more successfully handled incomplete messages
  * @property {Object[]|undefined} [discardedUnusableRecords] - an optional list of zero or more successfully discarded unusable records
  * @property {Object[]|undefined} [discardedRejectedMessages] - an optional list of zero or more successfully discarded rejected messages
+ * @property {Error|undefined} [saveMessagesTaskTrackingStateError] - an optional error with which save messages task tracking state failed
  * @property {Error|undefined} [handleIncompleteMessagesError] - an optional error with which handle incomplete records failed
  * @property {Error|undefined} [discardUnusableRecordsError] - an optional error with which discard unusable records failed
  * @property {Error|undefined} [discardRejectedMessagesError] - an optional error with which discard rejected messages failed
+ * @property {boolean|undefined} [partial] - whether these results are partial (i.e. not all available yet) or full results
+ * @property {Promise.<Object[]|Error>|undefined} [saveMessagesTaskTrackingStatePromise] - a promise of either a resolved list of zero or more messages that had their task tracking state successfully saved or a rejected error
+ * @property {Promise.<Object[]|Error>|undefined} [handleIncompleteMessagesPromise] - a promise of either a resolved list of zero or more successfully handled incomplete records or a rejected error
+ * @property {Promise.<Object[]|Error>|undefined} [discardUnusableRecordsPromise] - a promise of either a resolved list of zero or more successfully discarded unusable records or a rejected error
+ * @property {Promise.<Object[]|Error>|undefined} [discardRejectedMessagesPromise] - a promise of either a resolved list of zero or more successfully discarded rejected messages or a rejected error
  */
 
 /**
- * @typedef {Object} StreamProcessingPartialResults - the stream processing partial results, which are attached to the
- * final error when stream processing fails
- * @property {Object[]} messages - a list of zero or more successfully extracted message objects
- * @property {Object[]} unusableRecords - a list of zero or more unusable records
- * @property {boolean} processingCompleted - whether or not message processing completed successfully or not
- * @property {boolean} processingFailed - whether or not message processing failed or not
- * @property {boolean} processingTimedOut - whether or not message processing timed out or not
- * @property {Promise.<Object[]|Error>} handleIncompleteMessagesPromise - a promise of either a resolved list of zero or more successfully handled incomplete records or a rejected error
- * @property {Promise.<Object[]|Error>} discardUnusableRecordsPromise - a promise of either a resolved list of zero or more successfully discarded unusable records or a rejected error
- * @property {Promise.<Object[]|Error>} discardRejectedMessagesPromise - a promise of either a resolved list of zero or more successfully discarded rejected messages or a rejected error
+ * @typedef {Object} SummarizedStreamConsumerResults - the summarized stream consumer results
+ * @property {number} messages - the number of successfully extracted message objects
+ * @property {number} unusableRecords - the number of unusable records
+ * @property {Task} processing - a task that tracks the state of the processing phase
+ * @property {Task|undefined} [finalising] - a task that tracks the state of the finalising phase
+ * @property {number|undefined} [savedMessagesTaskTrackingState] - the number of messages that had their task tracking state successfully saved
+ * @property {number|undefined} [handledIncompleteMessages] - the number of successfully handled incomplete messages
+ * @property {number|undefined} [discardedUnusableRecords] - the number of successfully discarded unusable records
+ * @property {number|undefined} [discardedRejectedMessages] - the number of successfully discarded rejected messages
+ * @property {boolean|undefined} [partial] - whether these results are partial (i.e. not all available yet) or full results
+ * @property {string|undefined} [saveMessagesTaskTrackingStateError] - an optional error with which save messages task tracking state failed
+ * @property {string|undefined} [handleIncompleteMessagesError] - an optional error with which handle incomplete records failed
+ * @property {string|undefined} [discardUnusableRecordsError] - an optional error with which discard unusable records failed
+ * @property {string|undefined} [discardRejectedMessagesError] - an optional error with which discard rejected messages failed
  */
 
 /**
- * @typedef {Error} StreamProcessingError - the final error returned via a rejected promise when stream processing fails
- * @property {StreamProcessingPartialResults} streamProcessingPartialResults - the partial stream processing results
- * available at the time of the final error
+ * @typedef {Error} StreamConsumerError - the final error returned via a rejected promise when the stream consumer fails or times out
+ * @property {StreamConsumerResults|undefined} [streamConsumerResults] - the full stream consumer results or partial
+ * results available at the time of the final error or timeout
  */
 
 /**
@@ -206,8 +227,8 @@ function configureRegionStageAndAwsContext(context, event, awsContext) {
  * @param {TaskDef[]|undefined} [processAllTaskDefsOrNone] - an "optional" list of "processAll" task definitions that
  * will be used to generate the tasks to be executed on all of the event's messages collectively
  * @param {Object} context - the configured context to use
- * @returns {Promise.<StreamProcessingResults|StreamProcessingError>} a resolved promise with the full stream processing
- * results or a rejected promise with an error with partial stream processing results
+ * @returns {Promise.<StreamConsumerResults|StreamConsumerError>} a resolved promise with the full stream consumer
+ * results or a rejected promise with an error with optional full or partial stream consumer results
  */
 function processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsOrNone, context) {
   // Ensure that the stream consumer is fully configured before proceeding, and if not, trigger a replay of all the
@@ -222,7 +243,6 @@ function processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsO
     // Check if the Lambda as configured will be unusable or useless, and if so, trigger a replay of all the records until
     // it can be fixed
     validateTaskDefinitions(processOneTaskDefsOrNone, processAllTaskDefsOrNone, context);
-
   } catch (err) {
     return Promise.reject(err);
   }
@@ -231,12 +251,26 @@ function processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsO
   const processOneTaskDefs = processOneTaskDefsOrNone ? processOneTaskDefsOrNone : [];
   const processAllTaskDefs = processAllTaskDefsOrNone ? processAllTaskDefsOrNone : [];
 
+  // Create a task to track the state of the processing phase
+  const processingTask = Task.createTask(TaskDef.defineTask(PROCESSING_TASK_NAME, noop));
+  processingTask.incrementAttempts(true);
+  processingTask.updateLastExecutedAt(new Date(), true);
+
+  const phaseTasksByName = getPhaseTasksByName(context, context);
+  phaseTasksByName[PROCESSING_TASK_NAME] = processingTask;
+
   if (context.debugEnabled) logStreamEvent(event, "Processing stream event", false, context);
 
   const records = event.Records;
   if (!records || records.length <= 0) {
     logStreamEvent(event, "Missing Records on stream event", true, context);
-    return Promise.resolve([]);
+    processingTask.complete([], false, false);
+    const streamConsumerResults = {
+      messages: [],
+      unusableRecords: [],
+      processing: processingTask
+    };
+    return Promise.resolve(streamConsumerResults);
   }
 
   // Convert all of the parsable Kinesis event's records back into their original message object forms; skipping &
@@ -256,10 +290,18 @@ function processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsO
   // us a bit of time to finalise at least some of the message processing before we run out of time to complete
   // everything in this invocation
   const cancellable = {};
-  const timeoutPromise = createTimeoutPromise(cancellable, context);
+  const timeoutMs = calculateTimeoutMs(context.streamProcessing.timeoutAtPercentageOfRemainingTime, context);
+  const timeoutPromise = createTimeoutPromise(processingTask, timeoutMs, cancellable, context)
+    .then(timeoutTriggered => {
+      if (timeoutTriggered) { // If the timeout triggered then
+        // timeout any and all of the process one and all tasks on the messages (using the timeout error set on the processing task by createTimeoutPromise
+        timeoutMessagesProcessOneAndAllTasks(messages, processingTask.error, context);
+      }
+      return timeoutTriggered;
+    });
 
   // Build a completed promise that will only continue once the processedPromise and discardUnusableRecordsPromise promises have complete
-  const completedPromise = createCompletedPromise(processedPromise, messages, cancellable, context);
+  const completedPromise = createCompletedPromise(processingTask, processedPromise, messages, cancellable, context);
 
   const completedVsTimeoutPromise = Promise.race([completedPromise, timeoutPromise]);
 
@@ -268,9 +310,12 @@ function processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsO
   return completedVsTimeoutPromise
     .then(results => finaliseMessageProcessing(messages, unusableRecords, discardUnusableRecordsPromise, context))
     .catch(err => {
-      context.error(`Stream processing failed with error (${err})`, err.stack);
+      context.error(`Stream consumer failed with error (${err})`, err.stack);
       return Promise.reject(err);
     });
+}
+
+function noop() {
 }
 
 /**
@@ -533,6 +578,19 @@ function getTaskTracking(target, context) {
     }
   }
   return taskTracking;
+}
+
+function getPhaseTasksByName(target, context) {
+  const taskTracking = getTaskTracking(target, context);
+  if (!taskTracking.phases) {
+    taskTracking.phases = {};
+  }
+  return taskTracking.phases;
+}
+
+function getPhaseTask(target, taskName, context) {
+  const tasksByName = getPhaseTasksByName(target, context);
+  return taskUtils.getTask(tasksByName, taskName);
 }
 
 /**
@@ -812,72 +870,105 @@ if (Task.taskExecuteFactory === Task.defaultTaskExecuteFactory) {
 }
 
 /**
+ * Calculates the number of milliseconds to wait before timing out using the given timeoutAtPercentageOfRemainingTime
+ * and the Lambda's remaining time to execute.
+ * @param {number} timeoutAtPercentageOfRemainingTime - the percentage of the remaining time at which to timeout
+ * the given task (expressed as a number between 0.0 and 1.0, e.g. 0.9 would mean timeout at 90% of the remaining time)
+ * @param {Object} context - the context
+ * @param {Object} context.awsContext - the AWS context
+ * @returns {number} the number of milliseconds to wait
+ */
+function calculateTimeoutMs(timeoutAtPercentageOfRemainingTime, context) {
+  const remainingTimeInMillis = context.awsContext.getRemainingTimeInMillis();
+  return Math.round(remainingTimeInMillis * timeoutAtPercentageOfRemainingTime);
+}
+
+/**
  * Creates a promise that will timeout when the configured percentage or 90% (if not configured) of the remaining time
  * in millis is reached, which will give us hopefully enough time to finalise at least some of our message processing
  * before we run out of time to complete everything in this invocation.
  *
+ * @param {Task} task - a task to be timed out if the timeout triggers
+ * @param {number} timeoutMs - the number of milliseconds to wait before timing out
  * @param {Object|undefined|null} [cancellable] - an arbitrary object onto which a cancelTimeout method will be installed
  * @param {Object} context - the context
- * @param {Object} context.awsContext - the context's AWS context
  * @return {Promise.<boolean>} a promise to return true if the timeout is triggered or false if not
  */
-function createTimeoutPromise(cancellable, context) {
-  const remainingTimeInMillis = context.awsContext.getRemainingTimeInMillis();
-
-  // Resolve the configured percentage of remaining time at which to timeout or use the default
-  const timeoutAtPercentageOfRemainingTime = context.streamProcessing.timeoutAtPercentageOfRemainingTime;
-
-  let timeoutMs = Number.parseInt(remainingTimeInMillis * timeoutAtPercentageOfRemainingTime);
-  return Promise.delay(timeoutMs, cancellable)
-    .then(() => {
-      context.streamConsumer.processingTimedOut = true;
-      context.info('Premature timeout kicking in ...');
-      return true;
-    })
-    .catch(err => {
-      // timeout was cancelled externally, so return normally
-      context.streamConsumer.processingTimedOut = false;
-      return false;
+function createTimeoutPromise(task, timeoutMs, cancellable, context) {
+  return Promise.delay(timeoutMs, cancellable).then(
+    triggered => {
+      if (triggered) {
+        context.info(`Timed out while waiting for ${task.name}`);
+        task.timeout(new TimeoutError(`Ran out of time to complete ${task.name}`), false, true);
+      }
+      return triggered;
+    },
+    triggered => {
+      if (triggered) {
+        context.info(`Timed out while waiting for ${task.name}`);
+        task.timeout(new TimeoutError(`Ran out of time to complete ${task.name}`), false, true);
+      }
+      return triggered;
     });
 }
 
 /**
- * Build a completed promise that will only continue once the given processedPromise and discardUnusableRecordsPromise
- * promises have complete.
- * @param {Promise} processedPromise - the promise that all processing tasks have completed
+ * Times out any and all of the process all master tasks on the entire batch of messages that have not finalised yet and
+ * also times out any and all of the process one tasks on each and every message that have not finalised yet.
+ * @param {Object[]} messages - the entire batch of messages being processed
+ * @param {Error|undefined} [timeoutError] - the optional error that describes or that triggered the timeout
+ * @param {Object} context - the context to use
+ */
+function timeoutMessagesProcessOneAndAllTasks(messages, timeoutError, context) {
+// Timeout any and all of the process all master tasks on the entire batch of messages that have not finalised yet
+  const processAllTasks = taskUtils.getTasks(getProcessAllTasksByName(messages, context));
+  processAllTasks.forEach(task => {
+    task.timeout(timeoutError, false, true);
+  });
+  // Timeout any and all of the process one tasks on each and every message that have not finalised yet
+  messages.forEach(message => {
+    const processOneTasks = taskUtils.getTasks(getProcessOneTasksByName(message, context));
+    processOneTasks.forEach(task => {
+      task.timeout(timeoutError, false, true);
+    });
+  });
+}
+
+/**
+ * Build a completed promise that will only complete when the given completingPromise has completed.
+ * @param {Task} task - a task to be completed or failed depending on the outcome of the promise and if the timeout has not triggered yet
+ * @param {Promise} completingPromise - the promise that will complete when all processing has been completed for the current phase
  * @param {Object[]} messages - the messages being processed
  * @param {Object} cancellable - a cancellable object that enables cancellation of the timeout promise on completion
  * @param {Object} context - the context
- * @returns {Promise.<Object[]>} a promise to return the messages when processing finishes successfully
+ * @returns {Promise.<Object[]>} a promise to return the results or error encountered when the completingPromise resolves
  */
-function createCompletedPromise(processedPromise, messages, cancellable, context) {
-  context.streamConsumer.processingCompleted = false;
-  context.streamConsumer.processingFailed = false;
-  return processedPromise
-    .then(results => {
+function createCompletedPromise(task, completingPromise, messages, cancellable, context) {
+  const m = messages.length;
+  const ms = `${m} message${m !== 1 ? 's' : ''}`;
+
+  return completingPromise.then(
+    results => {
       const timedOut = cancellable.cancelTimeout();
-      const m = messages.length;
-      const ms = m !== 1 ? 's' : '';
       if (timedOut) {
-        context.warn(`Timed out before finished processing ${m} message${ms}`);
+        context.warn(`Timed out before completed ${task.name} of ${ms}`);
       } else {
-        context.info(`Processed ${m} message${ms}`);
-        context.streamConsumer.processingCompleted = true;
+        context.info(`Completed ${task.name} ${ms}`);
+        task.complete(results, false, false);
       }
-      return messages;
-    })
-    .catch(err => {
+      return results;
+    },
+    err => {
       const timedOut = cancellable.cancelTimeout();
-      const m = messages.length;
-      const ms = m !== 1 ? 's' : '';
       if (timedOut) {
-        context.warn(`Timed out before failed to finish processing ${m} message${ms} - error (${err})`, err.stack);
+        context.warn(`Timed out before failed ${task.name} of ${ms} - error (${err})`, err.stack);
       } else {
-        context.info(`Failed to finish processing ${m} message${ms} - error (${err})`, err.stack);
-        context.streamConsumer.processingFailed = true;
+        context.info(`Failed ${task.name} of ${ms} - error (${err})`, err.stack);
+        task.fail(err, false);
       }
       throw err;
-    });
+    }
+  );
 }
 
 /**
@@ -963,9 +1054,10 @@ function freezeAllTasks(messages, context) {
  * @param {Object[]} messages - the messages to be finalised (if any)
  * @param {Object[]} unusableRecords - the unusable records encountered (if any)
  * @param {Promise} discardUnusableRecordsPromise - the promise that all unusable records have been discarded
- * @param {Object} context - the context
- * @returns {Promise.<StreamProcessingResults|StreamProcessingError>} a resolved promise with the full stream processing
- * results or a rejected promise with an error with partial stream processing results
+ * @param {Object} context - the context to use
+ * @param {Object} context.awsContext - the AWS context
+ * @returns {Promise.<StreamConsumerResults|StreamConsumerError>} a resolved promise with the full stream processing
+ * results or a rejected promise with an error with optional full or partial stream processing results
  */
 function finaliseMessageProcessing(messages, unusableRecords, discardUnusableRecordsPromise, context) {
   // Discard incomplete tasks on each message if ALL of the message's tasks have exceeded the maximum number of allowed attempts
@@ -974,109 +1066,197 @@ function finaliseMessageProcessing(messages, unusableRecords, discardUnusableRec
   // Freeze all of the messages' tasks to prevent any further changes from the other promise that lost the timeout race
   freezeAllTasks(messages, context);
 
+  // Create a task to track the state of the finalising phase
+  const finalisingTaskDef = TaskDef.defineTask(FINALISING_TASK_NAME, noop);
+  // TODO consider tracking finalising sub-tasks states
+  // finalisingTaskDef.defineSubTasks([SAVE_MESSAGES_TASK_TRACKING_STATE_TASK_NAME, HANDLE_INCOMPLETE_MESSAGES_TASK_NAME,
+  //   DISCARD_UNUSABLE_RECORDS_TASK_NAME, DISCARD_REJECTED_MESSAGES_TASK_NAME]);
+
+  const finalisingTask = Task.createTask(finalisingTaskDef);
+  finalisingTask.incrementAttempts(true);
+  finalisingTask.updateLastExecutedAt(new Date(), true);
+
+  const phaseTasksByName = getPhaseTasksByName(context, context);
+  phaseTasksByName[FINALISING_TASK_NAME] = finalisingTask;
+
   // Save the task tracking states of all of the messages
-  //TODO
   const saveMessagesTaskTrackingStatePromise = saveAllMessagesTaskTrackingState(messages, context);
 
-  // Resubmit any still incomplete messages
+  // Handle any still incomplete messages
   const handleIncompleteMessagesPromise = handleAnyIncompleteMessages(messages, context);
 
   // Discard any finalised messages that contain at least one rejected task
   const discardRejectedMessagesPromise = discardAnyRejectedMessages(messages, context);
 
-  const streamProcessingResults = {
+  const processingTask = getPhaseTask(context, PROCESSING_TASK_NAME, context);
+
+  const streamConsumerResults = {
     messages: messages,
     unusableRecords: unusableRecords,
-    processingCompleted: isProcessingCompleted(context),
-    processingFailed: isProcessingFailed(context),
-    processingTimedOut: isProcessingTimedOut(context)
+    processing: processingTask,
+    finalising: finalisingTask
   };
 
-  return Promise.all([discardUnusableRecordsPromise, handleIncompleteMessagesPromise, discardRejectedMessagesPromise])
-    .then(results => {
-      const discardedUnusableRecords = results[0];
-      const handledIncompleteMessages = results[1];
-      const discardedRejectedMessages = results[2];
+  // Set a timeout to trigger at the last half a second, which will hopefully give us a enough time to complete all of
+  // the message finalising before the Lambda runs out of time to execute
+  const cancellable = {};
+  const timeoutMs = Math.min(500, calculateTimeoutMs(context.streamProcessing.timeoutAtPercentageOfRemainingTime, context));
+  const timeoutPromise = createTimeoutPromise(finalisingTask, timeoutMs, cancellable, context);
 
-      streamProcessingResults.handledIncompleteMessages = handledIncompleteMessages;
-      streamProcessingResults.discardedUnusableRecords = discardedUnusableRecords;
-      streamProcessingResults.discardedRejectedMessages = discardedRejectedMessages;
+  // Create a finalised promise that will ONLY complete when every one of the other finalising promises resolve
+  const finalisedPromise = Promise.every(saveMessagesTaskTrackingStatePromise, handleIncompleteMessagesPromise,
+    discardUnusableRecordsPromise, discardRejectedMessagesPromise);
 
-      return streamProcessingResults;
-    })
-    .catch(err => {
-      err.streamProcessingPartialResults = streamProcessingResults;
-      streamProcessingResults.handleIncompleteMessagesPromise = handleIncompleteMessagesPromise;
-      streamProcessingResults.discardUnusableRecordsPromise = discardUnusableRecordsPromise;
-      streamProcessingResults.discardRejectedMessagesPromise = discardRejectedMessagesPromise;
+  const completedPromise = createCompletedPromise(finalisingTask, finalisedPromise, messages, cancellable, context);
 
+  const completedVsTimeoutPromise = Promise.race([completedPromise, timeoutPromise]);
+
+  // Whichever finishes first, wrap up as best as possible
+  return completedVsTimeoutPromise.then(
+    results => {
+      if (Array.isArray(results)) {
+        // Finalisation must have completed
+        completeStreamConsumerResults(streamConsumerResults, results);
+        logStreamConsumerResults(streamConsumerResults, context);
+
+        // Choose one of the errors (if any) as the error with which to fail this Lambda
+        const err = results[1].error ? results[1].error : results[0].error ? results[0].error :
+          results[2].error ? results[2].error : results[3].error;
+
+        if (err) {
+          err.streamConsumerResults = streamConsumerResults;
+          return Promise.reject(err);
+        }
+        return streamConsumerResults;
+
+      } else {
+        // Finalisation must have timed out, so we don't have all the results on hand
+        const err = finalisingTask.error;
+        addPartialStreamConsumerResultsToError(err, streamConsumerResults, saveMessagesTaskTrackingStatePromise,
+          handleIncompleteMessagesPromise, discardUnusableRecordsPromise, discardRejectedMessagesPromise);
+        logPartialStreamConsumerResults(streamConsumerResults, context);
+        return Promise.reject(err);
+      }
+    },
+    err => {
+      // Finalisation must have failed or timed out
+      addPartialStreamConsumerResultsToError(err, streamConsumerResults, saveMessagesTaskTrackingStatePromise,
+        handleIncompleteMessagesPromise, discardUnusableRecordsPromise, discardRejectedMessagesPromise);
+      logPartialStreamConsumerResults(streamConsumerResults, context);
       return Promise.reject(err);
-    });
+    }
+  );
+}
+
+function completeStreamConsumerResults(streamConsumerResults, resultsOrErrors) {
+  streamConsumerResults.partial = false;
+  if (resultsOrErrors[0].result) streamConsumerResults.savedMessagesTaskTrackingState = resultsOrErrors[0].result;
+  if (resultsOrErrors[0].error) streamConsumerResults.saveMessagesTaskTrackingStateError = resultsOrErrors[0].error;
+
+  if (resultsOrErrors[1].result) streamConsumerResults.handledIncompleteMessages = resultsOrErrors[1].result;
+  if (resultsOrErrors[1].error) streamConsumerResults.handleIncompleteMessagesError = resultsOrErrors[1].error;
+
+  if (resultsOrErrors[2].result) streamConsumerResults.discardedUnusableRecords = resultsOrErrors[2].result;
+  if (resultsOrErrors[2].error) streamConsumerResults.discardUnusableRecordsError = resultsOrErrors[2].error;
+
+  if (resultsOrErrors[3].result) streamConsumerResults.discardedRejectedMessages = resultsOrErrors[3].result;
+  if (resultsOrErrors[3].error) streamConsumerResults.discardRejectedMessagesError = resultsOrErrors[3].error;
+}
+
+function logStreamConsumerResults(streamConsumerResults, context) {
+  context.debug(`Stream consumer results: ${stringify(streamConsumerResults)}`);
+  context.info(`Stream consumer summarized results: ${stringify(summarizeStreamConsumerResults(streamConsumerResults), false)}`);
+}
+
+function addPartialStreamConsumerResultsToError(error, streamConsumerResults, saveMessagesTaskTrackingStatePromise,
+  handleIncompleteMessagesPromise, discardUnusableRecordsPromise, discardRejectedMessagesPromise) {
+  error.streamConsumerResults = streamConsumerResults;
+  streamConsumerResults.partial = true;
+  streamConsumerResults.saveMessagesTaskTrackingStatePromise = saveMessagesTaskTrackingStatePromise;
+  streamConsumerResults.handleIncompleteMessagesPromise = handleIncompleteMessagesPromise;
+  streamConsumerResults.discardUnusableRecordsPromise = discardUnusableRecordsPromise;
+  streamConsumerResults.discardRejectedMessagesPromise = discardRejectedMessagesPromise;
+}
+
+function logPartialStreamConsumerResults(streamConsumerResults, context) {
+  context.info(`Stream consumer summarized preliminary partial results: ${stringify(summarizeStreamConsumerResults(streamConsumerResults), false)}`);
+  // Kick off a promise that will asynchronously wait for and then log any preliminary partial results yet to be finalised if time allows
+  awaitAndLogStreamConsumerResults(streamConsumerResults, context);
+  return undefined;
 }
 
 /**
- * If the given error has stream processing partial results, then returns a promise that will wait for all of the stream
- * processing partial results' promises to complete and then return the finalised results; otherwise just returns a
- * promise that will return undefined
- * @param {Error} error - the error with which stream processing ended
- * @param {StreamProcessingPartialResults} [error.streamProcessingPartialResults] - the optional stream processing
- * partial results attached to the error
- * @returns {Promise.<StreamProcessingResults|undefined>} a promise of the finalised stream processing results (if any)
- * or undefined (if none)
+ * If the given stream consumer results are full results, then returns a promise with the full results; otherwise if
+ * they are partial results, then returns a promise that will wait for all of the partial results' promises to complete
+ * and then return the full results; otherwise just returns a promise that will return undefined.
+ * @param {StreamConsumerResults|undefined} [results] - the optional full or partial stream consumer results
+ * @returns {Promise.<StreamConsumerResults|undefined>} a promise of the full stream consumer results (if any) or
+ * undefined (if none)
  */
-function awaitStreamProcessingPartialResults(error) {
-  if (error.streamProcessingPartialResults) {
-    const partialResults = error.streamProcessingPartialResults;
-    const results = {
-      messages: partialResults.messages,
-      unusableRecords: partialResults.unusableRecords,
-      processingCompleted: partialResults.processingCompleted,
-      processingFailed: partialResults.processingFailed,
-      processingTimedOut: partialResults.processingTimedOut
-    };
-
-    return Promise.every(partialResults.handleIncompleteMessagesPromise, partialResults.discardUnusableRecordsPromise, partialResults.discardRejectedMessagesPromise)
+function awaitStreamConsumerResults(results) {
+  if (results) {
+    if (!results.partial) {
+      return Promise.resolve(results);
+    }
+    return Promise.every(results.saveMessagesTaskTrackingStatePromise, results.handleIncompleteMessagesPromise,
+      results.discardUnusableRecordsPromise, results.discardRejectedMessagesPromise)
       .then(resultsOrErrors => {
-        results.discardedUnusableRecords = resultsOrErrors[0].result;
-        results.discardUnusableRecordsError = resultsOrErrors[0].error;
-        results.handledIncompleteMessages = resultsOrErrors[1].result;
-        results.handleIncompleteMessagesError = resultsOrErrors[1].error;
-        results.discardedRejectedMessages = resultsOrErrors[2].result;
-        results.discardRejectedMessagesError = resultsOrErrors[2].error;
+        completeStreamConsumerResults(results, resultsOrErrors);
         return results;
       });
-
   } else {
     return Promise.resolve(undefined);
   }
 }
 
 /**
- * Awaits and then logs any partial stream processing results on the given error using the given context.
- * @param {Error} error - the error with which stream processing ended
- * @param {StreamProcessingPartialResults} [error.streamProcessingPartialResults] - the optional stream processing
- * partial results attached to the error
- * @param {Object} context - the context to use
- * @returns {Promise.<StreamProcessingResults|undefined>} a promise of the finalised stream processing results (if any)
- * or undefined (if none)
+ * Summarizes the given stream consumer results - converting lists of messages and records into counts.
+ * @param {StreamConsumerResults} results - the stream consumer results
+ * @returns {SummarizedStreamConsumerResults|undefined} summarized stream consumer results
  */
-function awaitAndLogStreamProcessingPartialResults(error, context) {
-  return awaitStreamProcessingPartialResults(error).then(results => {
-    context.log(results ? JSON.stringify(results) : 'No stream processing partial results available');
+function summarizeStreamConsumerResults(results) {
+  if (!results) return undefined;
+
+  function toLength(list) {
+    return Array.isArray(list) ? list.length : undefined;
+  }
+
+  const summary = {
+    messages: toLength(results.messages),
+    unusableRecords: toLength(results.unusableRecords),
+    processing: results.processing,
+    finalising: results.finalising,
+    partial: results.partial
+  };
+
+  if (results.savedMessagesTaskTrackingState) summary.savedMessagesTaskTrackingState = toLength(results.savedMessagesTaskTrackingState);
+  if (results.saveMessagesTaskTrackingStateError) summary.saveMessagesTaskTrackingStateError = results.saveMessagesTaskTrackingStateError.toString();
+
+  if (results.handledIncompleteMessages) summary.handledIncompleteMessages = toLength(results.handledIncompleteMessages);
+  if (results.handleIncompleteMessagesError) summary.handleIncompleteMessagesError = results.handleIncompleteMessagesError.toString();
+
+  if (results.discardedUnusableRecords) summary.discardedUnusableRecords = toLength(results.discardedUnusableRecords);
+  if (results.discardUnusableRecordsError) summary.discardUnusableRecordsError = results.discardUnusableRecordsError.toString();
+
+  if (results.discardedRejectedMessages) summary.discardedRejectedMessages = toLength(results.discardedRejectedMessages);
+  if (results.discardRejectedMessagesError) summary.discardRejectedMessagesError = results.discardRejectedMessagesError.toString();
+
+  return summary;
+}
+
+/**
+ * If the given stream consumer results are full results, then returns a promise to log and return them; otherwise if
+ * they are partial results, then returns a promise that will wait for the full results and then log and return them.
+ * @param {StreamConsumerResults|undefined} [results] - the optional full or partial stream consumer results
+ * @param {Object} context - the context to use
+ * @returns {Promise.<StreamConsumerResults|undefined>} a promise of the full stream processing results (if any) or
+ * undefined (if none)
+ */
+function awaitAndLogStreamConsumerResults(results, context) {
+  return awaitStreamConsumerResults(results).then(results => {
+    logStreamConsumerResults(results, context);
     return results;
   });
-}
-
-function isProcessingCompleted(context) {
-  return context && context.streamConsumer && context.streamConsumer.processingCompleted;
-}
-
-function isProcessingFailed(context) {
-  return context && context.streamConsumer && context.streamConsumer.processingFailed;
-}
-
-function isProcessingTimedOut(context) {
-  return context && context.streamConsumer && context.streamConsumer.processingTimedOut;
 }
 
 function discardIncompleteTasksIfMaxAttemptsExceeded(message, context) {
@@ -1260,6 +1440,7 @@ function discardAnyRejectedMessages(messages, context) {
 function isMessageFinalisedButRejected(message, context) {
   // Get all of the message's processOneTasks
   const processOneTasksByName = getProcessOneTasksByName(message, context);
+
   // Get all of the message's processAllTasks
   const processAllTasksByName = getProcessAllTasksByName(message, context);
 

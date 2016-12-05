@@ -1,6 +1,6 @@
 {
   "loggingOptions": {
-    "logLevel": "trace",
+    "logLevel": "debug",
     "useLevelPrefixes": true,
     "useConsoleTrace": false
   },
@@ -15,7 +15,7 @@
   "streamProcessingOptions": {
     "streamType": "kinesis",
     "taskTrackingName": "taskTracking",
-    "timeoutAtPercentageOfRemainingTime": 0.9,
+    "timeoutAtPercentageOfRemainingTime": 0.8,
     "maxNumberOfAttempts": 10,
     "deadRecordQueueName": "DeadRecordQueue",
     "deadMessageQueueName": "DeadMessageQueue",
