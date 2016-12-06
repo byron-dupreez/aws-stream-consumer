@@ -425,7 +425,6 @@ test('processStreamEvent with 1 message that succeeds all tasks', t => {
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -498,7 +497,6 @@ test('processStreamEvent with 1 message that succeeds all tasks (despite broken 
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -573,7 +571,6 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -649,7 +646,6 @@ test('processStreamEvent with 1 unusable record', t => {
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -718,7 +714,6 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -811,7 +806,6 @@ test('processStreamEvent with 1 message that fails its processOne task, resubmit
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -884,7 +878,6 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -976,7 +969,6 @@ test('processStreamEvent with 1 message that fails its processAll task, resubmit
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1049,7 +1041,6 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -1159,7 +1150,6 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1238,7 +1228,6 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -1336,7 +1325,6 @@ test('processStreamEvent with 1 message that rejects - must discard rejected mes
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1416,7 +1404,6 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {
@@ -1546,7 +1533,6 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1652,7 +1638,6 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1776,7 +1761,6 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1853,7 +1837,6 @@ test('processStreamEvent with 1 message and triggered timeout promise, must resu
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(results => {
@@ -1923,7 +1906,6 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
     equal(t, context.region, region, 'context.region');
     equal(t, context.stage, 'dev1', 'context.stage');
     equal(t, context.awsContext, awsContext, 'context.awsContext');
-    t.ok(context.streamConsumer, 'context.streamConsumer');
 
     promise
       .then(messages => {

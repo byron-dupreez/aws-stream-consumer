@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.11
+# aws-stream-consumer v1.0.0-beta.12
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -313,6 +313,14 @@ See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) f
 
 ## Changes
 
+### 1.0.0-beta.12
+- Updated `core-functions` dependency to version 2.0.11
+- Updated `logging-utils` dependency to version 3.0.6
+- Updated `task-utils` dependency to version 4.0.5
+- Updated `aws-core-utils` dependency to version 5.0.6
+- Replaced `node-uuid` dependency with `uuid` dependency in `test\package.json`
+- Removed `context.streamConsumer` property that is no longer used
+
 ### 1.0.0-beta.11
 - Changes to `stream-consumer` module:
  - Fixed logging defect in `awaitAndLogStreamProcessingPartialResults` function
@@ -389,7 +397,8 @@ See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) f
 
 - Deleted `stream-consumer-config` module:
   - Deleted some of its logic and moved remainder into `stream-consumer` module
-  - Removed configuration of `context.streamConsumer.resubmitStreamName` property in favour of getting each message's 
+  - Removed configuration of `context.streamConsumer.resubmitStreamName` property in favour of getting the resubmit 
+    stream name from each message's record's eventSourceARN 
 - Changes to `stream-processing` module:
   - Simplified stream processing configuration to enable full-customisation of settings and/or options and to 
     synchronize with changes made to logging configuration and stage handling configuration

@@ -113,8 +113,7 @@ module.exports = {
  */
 function isStreamConsumerConfigured(context) {
   return !!context && logging.isLoggingConfigured(context) && stages.isStageHandlingConfigured(context) &&
-    context.region && context.stage && context.awsContext && streamProcessing.isStreamProcessingConfigured(context) &&
-    context.streamConsumer && typeof context.streamConsumer === 'object';
+    context.region && context.stage && context.awsContext && streamProcessing.isStreamProcessingConfigured(context);
 }
 
 /**
@@ -138,11 +137,6 @@ function configureStreamConsumer(context, settings, options, event, awsContext) 
 
   // Configure region, stage & AWS context
   configureRegionStageAndAwsContext(context, event, awsContext);
-
-  // Set up a streamConsumer object on the context onto which to track some of the overall flow state
-  if (!context.streamConsumer) {
-    context.streamConsumer = {};
-  }
 }
 
 /**
