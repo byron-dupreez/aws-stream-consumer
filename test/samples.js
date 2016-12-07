@@ -5,7 +5,7 @@
  * @author Byron du Preez
  */
 
-const uuid = require('node-uuid');
+const uuid = require('uuid');
 const base64 = require('core-functions/base64');
 
 const sampleAwsAccountId = "XXXXXXXXXXXX";
