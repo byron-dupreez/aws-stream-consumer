@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.12
+# aws-stream-consumer v1.0.0-beta.13
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -312,6 +312,16 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.0-beta.13
+- Fixed missing return type in `configureStreamConsumer` function in `stream-consumer.js` module
+- Fixed missing return type in `configureDependencies` function in `stream-processing.js` module
+- Moved all typedefs from `stream-consumer.js` & `stream-processing.js` modules to new `type-defs.js` module
+- Added new `StreamConsuming` and `StreamProcessing` typedefs to new `type-defs.js` module
+- Changed the argument and return types on many of the `stream-consumer.js` & `stream-processing.js` functions 
+  to use the existing and new typedefs
+- Updated `logging-utils` dependency to version 3.0.8
+- Updated `aws-core-utils` dependency to version 5.0.9
 
 ### 1.0.0-beta.12
 - Updated `core-functions` dependency to version 2.0.11

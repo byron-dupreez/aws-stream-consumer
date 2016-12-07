@@ -92,23 +92,9 @@ module.exports = {
 // =====================================================================================================================
 
 /**
- * @typedef {Object} StreamConsumerSettings - configuration settings
- * @property {LoggingSettings|undefined} [loggingSettings] - optional logging settings to use to configure logging
- * @property {StageHandlingSettings|undefined} [stageHandlingSettings] - optional stage handling settings to use to configure stage handling
- * @property {StreamProcessingSettings|undefined} [streamProcessingSettings] - optional stream processing settings to use to configure stream processing
- */
-
-/**
- * @typedef {Object} StreamConsumerOptions - configuration options to use if no corresponding settings are provided
- * @property {LoggingOptions|undefined} [loggingOptions] - optional logging options to use to configure logging
- * @property {StageHandlingOptions|undefined} [stageHandlingOptions] - optional stage handling options to use to configure stage handling
- * @property {StreamProcessingOptions|undefined} [streamProcessingOptions] - optional stream processing options to use to configure stream processing
- */
-
-/**
  * Returns true if the stream consumer's dependencies and runtime settings have been configured on the given context;
  * otherwise returns false.
- * @param {Object} context - the context to check
+ * @param {Object|StreamConsuming} context - the context to check
  * @returns {boolean} true if configured; false otherwise
  */
 function isStreamConsumerConfigured(context) {
@@ -122,12 +108,12 @@ function isStreamConsumerConfigured(context) {
  * DynamoDB stream records. Any error thrown must subsequently trigger a replay of all the records in the current batch
  * until the Lambda can be fixed.
  *
- * @param {Object} context - the context onto which to configure a stream consumer's runtime settings
+ * @param {Object|StreamConsuming|StreamProcessing|StageHandling|Logging} context - the context onto which to configure a stream consumer's runtime settings
  * @param {StreamConsumerSettings|undefined} [settings] - optional configuration settings to use to configure dependencies
  * @param {StreamConsumerOptions|undefined} [options] - configuration options to use to configure dependencies if no corresponding settings are provided
  * @param {Object} event - the AWS event, which was passed to your lambda
  * @param {Object} awsContext - the AWS context, which was passed to your lambda
- * @return {Object} the context object configured with a stream consumer's runtime settings
+ * @return {StreamConsuming} the given context object configured with a stream consumer's runtime settings
  * @throws {Error} an error if the region and/or stage cannot be resolved
  */
 function configureStreamConsumer(context, settings, options, event, awsContext) {
@@ -137,13 +123,15 @@ function configureStreamConsumer(context, settings, options, event, awsContext) 
 
   // Configure region, stage & AWS context
   configureRegionStageAndAwsContext(context, event, awsContext);
+  return context;
 }
 
 /**
  * Configures the given context with the current region, the resolved stage and the given AWS context.
- * @param {Object} context - the context to configure
+ * @param {StreamProcessing|StreamConsuming} context - the context to configure
  * @param {Object} event - the AWS event, which was passed to your lambda
  * @param {Object} awsContext - the AWS context, which was passed to your lambda
+ * @return {StreamConsuming} the given context configured with a region, stage and the given AWS context
  */
 function configureRegionStageAndAwsContext(context, event, awsContext) {
   // Configure context.awsContext with the given AWS context, if not already configured
@@ -166,51 +154,6 @@ function configureRegionStageAndAwsContext(context, event, awsContext) {
 // =====================================================================================================================
 
 /**
- * @typedef {Object} StreamConsumerResults - the stream consumer results, which are returned when the stream consumer
- * completes successfully
- * @property {Object[]} messages - a list of zero or more successfully extracted message objects
- * @property {Object[]} unusableRecords - a list of zero or more unusable records
- * @property {Task} processing - a task that tracks the state of the processing phase
- * @property {Task|undefined} [finalising] - a task that tracks the state of the finalising phase
- * @property {Object[]|undefined} [savedMessagesTaskTrackingState] - an optional list of zero or more messages that had their task tracking state successfully saved
- * @property {Object[]|undefined} [handledIncompleteMessages] - an optional list of zero or more successfully handled incomplete messages
- * @property {Object[]|undefined} [discardedUnusableRecords] - an optional list of zero or more successfully discarded unusable records
- * @property {Object[]|undefined} [discardedRejectedMessages] - an optional list of zero or more successfully discarded rejected messages
- * @property {Error|undefined} [saveMessagesTaskTrackingStateError] - an optional error with which save messages task tracking state failed
- * @property {Error|undefined} [handleIncompleteMessagesError] - an optional error with which handle incomplete records failed
- * @property {Error|undefined} [discardUnusableRecordsError] - an optional error with which discard unusable records failed
- * @property {Error|undefined} [discardRejectedMessagesError] - an optional error with which discard rejected messages failed
- * @property {boolean|undefined} [partial] - whether these results are partial (i.e. not all available yet) or full results
- * @property {Promise.<Object[]|Error>|undefined} [saveMessagesTaskTrackingStatePromise] - a promise of either a resolved list of zero or more messages that had their task tracking state successfully saved or a rejected error
- * @property {Promise.<Object[]|Error>|undefined} [handleIncompleteMessagesPromise] - a promise of either a resolved list of zero or more successfully handled incomplete records or a rejected error
- * @property {Promise.<Object[]|Error>|undefined} [discardUnusableRecordsPromise] - a promise of either a resolved list of zero or more successfully discarded unusable records or a rejected error
- * @property {Promise.<Object[]|Error>|undefined} [discardRejectedMessagesPromise] - a promise of either a resolved list of zero or more successfully discarded rejected messages or a rejected error
- */
-
-/**
- * @typedef {Object} SummarizedStreamConsumerResults - the summarized stream consumer results
- * @property {number} messages - the number of successfully extracted message objects
- * @property {number} unusableRecords - the number of unusable records
- * @property {Task} processing - a task that tracks the state of the processing phase
- * @property {Task|undefined} [finalising] - a task that tracks the state of the finalising phase
- * @property {number|undefined} [savedMessagesTaskTrackingState] - the number of messages that had their task tracking state successfully saved
- * @property {number|undefined} [handledIncompleteMessages] - the number of successfully handled incomplete messages
- * @property {number|undefined} [discardedUnusableRecords] - the number of successfully discarded unusable records
- * @property {number|undefined} [discardedRejectedMessages] - the number of successfully discarded rejected messages
- * @property {boolean|undefined} [partial] - whether these results are partial (i.e. not all available yet) or full results
- * @property {string|undefined} [saveMessagesTaskTrackingStateError] - an optional error with which save messages task tracking state failed
- * @property {string|undefined} [handleIncompleteMessagesError] - an optional error with which handle incomplete records failed
- * @property {string|undefined} [discardUnusableRecordsError] - an optional error with which discard unusable records failed
- * @property {string|undefined} [discardRejectedMessagesError] - an optional error with which discard rejected messages failed
- */
-
-/**
- * @typedef {Error} StreamConsumerError - the final error returned via a rejected promise when the stream consumer fails or times out
- * @property {StreamConsumerResults|undefined} [streamConsumerResults] - the full stream consumer results or partial
- * results available at the time of the final error or timeout
- */
-
-/**
  * Processes the given (Kinesis or DynamoDB) stream event using the given AWS context and context by applying each of
  * the tasks defined by the task definitions in the given processOneTaskDefs and processAllTaskDefs to each message
  * extracted from the event.
@@ -220,7 +163,7 @@ function configureRegionStageAndAwsContext(context, event, awsContext) {
  * will be used to generate the tasks to be executed on each message independently
  * @param {TaskDef[]|undefined} [processAllTaskDefsOrNone] - an "optional" list of "processAll" task definitions that
  * will be used to generate the tasks to be executed on all of the event's messages collectively
- * @param {Object} context - the configured context to use
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {Promise.<StreamConsumerResults|StreamConsumerError>} a resolved promise with the full stream consumer
  * results or a rejected promise with an error with optional full or partial stream consumer results
  */
@@ -321,7 +264,7 @@ function noop() {
  * used to generate the tasks to be executed on each message independently
  * @param {TaskDef[]|undefined} processAllTaskDefs - an "optional" list of "processAll" task definitions that will be
  * used to generate the tasks to be executed on all of the event's messages collectively
- * @param {Object} context the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @throws {Error} a validation failure Error (if this Lambda is unusable or useless)
  */
 function validateTaskDefinitions(processOneTaskDefs, processAllTaskDefs, context) {
@@ -395,7 +338,7 @@ function logStreamEvent(event, prefix, asError, context) {
  * generate the tasks to be executed on each successfully extracted message independently
  * @param {TaskDef[]} processAllTaskDefs - a list of zero or more "processAll" task definitions that will be used to
  * generate the tasks to be executed on all of the event's messages collectively
- * @param {Object} context - the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @return {[Object[],Promise,Promise,Object[]]} an array containing: an array of zero or more successfully extracted
  * message objects; a promise that will complete when all of the processOne task promises complete (if any); a promise
  * that will complete when all of the processAll task promises complete (if any); and an array of zero or more unusable,
@@ -455,7 +398,7 @@ function processStreamEventRecords(records, processOneTaskDefs, processAllTaskDe
  * @param {Object} record - an AWS stream event record
  * @param {TaskDef[]} processOneTaskDefs - a list of zero or more "processOne" task definitions that will be used to
  * generate the tasks to be executed on each successfully extracted message independently
- * @param {Object} context - the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @return {Array.<Object|undefined>} an array containing: the parsed message or undefined; a promise that will complete
  * when all of the message's processOne tasks promises have completed (or undefined if none); and the unusable record
  * (or undefined if none)
@@ -499,7 +442,7 @@ function processStreamEventRecord(record, processOneTaskDefs, context) {
  * encountered and the returns the extracted message (if defined and successfully extracted); otherwise undefined.
  *
  * @param {Object} record - the stream event record from which to extract a message
- * @param {Object} context - the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {Object|undefined} - the extracted message (if successful); otherwise undefined
  */
 function extractMessageFromStreamEventRecord(record, context) {
@@ -595,7 +538,7 @@ function getPhaseTask(target, taskName, context) {
  * @param {Object} message - the message to be processed
  * @param {TaskDef[]} processOneTaskDefs - a list of zero or more "processOne" task definitions that will be used to
  * generate the tasks to be executed independently on the given message
- * @param {Object} context - the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {Promise|undefined} a promise that will complete with all of the messages's processOne tasks' results when all of
  * these tasks' promises (if any) have completed
  */
@@ -632,7 +575,7 @@ function executeProcessOneTasks(message, processOneTaskDefs, context) {
  *
  * @param {Task} task - the processOne task to be executed (or none)
  * @param {Object} message - the message to pass as the first argument to the given task's execute function
- * @param {Object} context - the context to pass as the second argument to the given task's execute function
+ * @param {StreamConsuming} context - the context to pass as the second argument to the given task's execute function
  * @return {Promise|undefined} a promise to return the task's result (if successful) or undefined (if not)
  */
 function executeProcessOneTask(task, message, context) {
@@ -678,7 +621,7 @@ function executeProcessOneTask(task, message, context) {
  * @param {Object} messages - the entire batch of messages to be processed
  * @param {TaskDef[]} processAllTaskDefs - a list of zero or more "processAll" task definitions that will be used to
  * generate the tasks to be executed on all of the event's messages collectively
- * @param {Object} context - the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {Promise|undefined} a promise that will complete with all of the processAll tasks' results when these tasks' promises
  * (if any) have completed
  */
@@ -753,7 +696,7 @@ function executeProcessAllTasks(messages, processAllTaskDefs, context) {
  *
  * @param {Task} task - the processAll task to be executed (or none)
  * @param {Object[]} messages - the messages to pass as the first argument to the given task's execute function
- * @param {Object} context - the context to pass as the second argument to the given task's execute function
+ * @param {StreamConsuming} context - the context to pass as the second argument to the given task's execute function
  * @return {Promise} a promise to return the task's result (if successful) or undefined (if not)
  */
 function executeProcessAllTask(task, messages, context) {
@@ -868,8 +811,7 @@ if (Task.taskExecuteFactory === Task.defaultTaskExecuteFactory) {
  * and the Lambda's remaining time to execute.
  * @param {number} timeoutAtPercentageOfRemainingTime - the percentage of the remaining time at which to timeout
  * the given task (expressed as a number between 0.0 and 1.0, e.g. 0.9 would mean timeout at 90% of the remaining time)
- * @param {Object} context - the context
- * @param {Object} context.awsContext - the AWS context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {number} the number of milliseconds to wait
  */
 function calculateTimeoutMs(timeoutAtPercentageOfRemainingTime, context) {
@@ -885,7 +827,7 @@ function calculateTimeoutMs(timeoutAtPercentageOfRemainingTime, context) {
  * @param {Task} task - a task to be timed out if the timeout triggers
  * @param {number} timeoutMs - the number of milliseconds to wait before timing out
  * @param {Object|undefined|null} [cancellable] - an arbitrary object onto which a cancelTimeout method will be installed
- * @param {Object} context - the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @return {Promise.<boolean>} a promise to return true if the timeout is triggered or false if not
  */
 function createTimeoutPromise(task, timeoutMs, cancellable, context) {
@@ -911,7 +853,7 @@ function createTimeoutPromise(task, timeoutMs, cancellable, context) {
  * also times out any and all of the process one tasks on each and every message that have not finalised yet.
  * @param {Object[]} messages - the entire batch of messages being processed
  * @param {Error|undefined} [timeoutError] - the optional error that describes or that triggered the timeout
- * @param {Object} context - the context to use
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  */
 function timeoutMessagesProcessOneAndAllTasks(messages, timeoutError, context) {
 // Timeout any and all of the process all master tasks on the entire batch of messages that have not finalised yet
@@ -934,7 +876,7 @@ function timeoutMessagesProcessOneAndAllTasks(messages, timeoutError, context) {
  * @param {Promise} completingPromise - the promise that will complete when all processing has been completed for the current phase
  * @param {Object[]} messages - the messages being processed
  * @param {Object} cancellable - a cancellable object that enables cancellation of the timeout promise on completion
- * @param {Object} context - the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {Promise.<Object[]>} a promise to return the results or error encountered when the completingPromise resolves
  */
 function createCompletedPromise(task, completingPromise, messages, cancellable, context) {
@@ -970,7 +912,7 @@ function createCompletedPromise(task, completingPromise, messages, cancellable, 
  * {@linkcode stream-processing-config#configureStreamProcessing}).
  * @param {Object[]} unusableRecords - the list of unusable records
  * @param {Object[]} records - the list of all records
- * @param {Object} context - the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {Promise.<*>} a promise that will complete when the configured discardUnusableRecords function completes
  */
 function discardAnyUnusableRecords(unusableRecords, records, context) {
@@ -1012,7 +954,7 @@ function discardAnyUnusableRecords(unusableRecords, records, context) {
  * Freezes all of the given messages' tasks to prevent any further changes to its tasks (e.g. from the other promise
  * that lost the timeout race).
  * @param {Object[]} messages - all of the messages
- * @param {Object} context - the context to use
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  */
 function freezeAllTasks(messages, context) {
   context.debug(`FREEZING all tasks on ${messages.length} message(s)`);
@@ -1048,8 +990,7 @@ function freezeAllTasks(messages, context) {
  * @param {Object[]} messages - the messages to be finalised (if any)
  * @param {Object[]} unusableRecords - the unusable records encountered (if any)
  * @param {Promise} discardUnusableRecordsPromise - the promise that all unusable records have been discarded
- * @param {Object} context - the context to use
- * @param {Object} context.awsContext - the AWS context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {Promise.<StreamConsumerResults|StreamConsumerError>} a resolved promise with the full stream processing
  * results or a rejected promise with an error with optional full or partial stream processing results
  */
@@ -1242,7 +1183,7 @@ function summarizeStreamConsumerResults(results) {
  * If the given stream consumer results are full results, then returns a promise to log and return them; otherwise if
  * they are partial results, then returns a promise that will wait for the full results and then log and return them.
  * @param {StreamConsumerResults|undefined} [results] - the optional full or partial stream consumer results
- * @param {Object} context - the context to use
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {Promise.<StreamConsumerResults|undefined>} a promise of the full stream processing results (if any) or
  * undefined (if none)
  */
@@ -1319,7 +1260,7 @@ function saveAllMessagesTaskTrackingState(messages, context) {
  * handle all of these incomplete messages using the configured handleIncompleteMessages function (see {@linkcode
  * stream-processing-config#configureStreamProcessing}).
  * @param {Object[]} messages - all of the messages being processed
- * @param {Object} context - the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {Promise.<*>} a promise that will complete when the configured handleIncompleteMessages function completes
  */
 function handleAnyIncompleteMessages(messages, context) {
@@ -1384,7 +1325,7 @@ function isMessageIncomplete(message, context) {
  * attempts to discard all of these rejected messages using the configured discardRejectedMessages function (see
  * {@linkcode stream-processing-config#configureStreamProcessing}).
  * @param {Object[]} messages - all of the messages being processed
- * @param {Object} context - the context
+ * @param {StreamConsuming} context - the context with stream consumer configuration to use
  * @returns {Promise.<*>} a promise that will complete when the configured discardRejectedMessages function completes
  */
 function discardAnyRejectedMessages(messages, context) {

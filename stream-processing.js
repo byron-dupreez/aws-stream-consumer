@@ -145,24 +145,13 @@ const stringify = Strings.stringify;
 
 const logging = require('logging-utils');
 
-/**
- * @typedef {Object} OtherSettings - configuration settings
- * @property {LoggingSettings|undefined} [loggingSettings] - optional logging settings to use to configure logging
- * @property {StageHandlingSettings|undefined} [stageHandlingSettings] - optional stage handling settings to use to configure stage handling
- */
-
-/**
- * @typedef {Object} OtherOptions - configuration options to use if no corresponding settings are provided
- * @property {LoggingOptions|undefined} [loggingOptions] - optional logging options to use to configure logging
- * @property {StageHandlingOptions|undefined} [stageHandlingOptions] - optional stage handling options to use to configure stage handling
- */
 // =====================================================================================================================
 // Stream processing configuration - configures and determines the processing behaviour of a stream consumer
 // =====================================================================================================================
 
 /**
  * Returns true if stream processing is already configured on the given context; false otherwise.
- * @param {Object} context - the context to check
+ * @param {Object|StreamProcessing} context - the context to check
  * @returns {boolean} true if configured; false otherwise
  */
 function isStreamProcessingConfigured(context) {
@@ -170,76 +159,19 @@ function isStreamProcessingConfigured(context) {
 }
 
 /**
- * Stream processing settings which configure and determine the processing behaviour of an AWS stream consumer.
- * @typedef {Object} StreamProcessingSettings
- * @property {string} streamType - the type of stream being processed - valid values are "kinesis" or "dynamodb"
- * @property {string} taskTrackingName - the name of the task tracking object property on each message, which has or
- * will be assigned two properties: a 'ones' object property; and an 'alls' object property. The 'ones' property is a
- * map of all of the processOne tasks (i.e. the tasks for processing a single message at a time) keyed by task name.
- * The 'alls' property is a map of all of the processAll tasks (i.e. the tasks for processing all of the messages that
- * were received in a batch from an AWS stream) keyed by task name
- * @property {number} timeoutAtPercentageOfRemainingTime - the percentage of the remaining time at which to timeout
- * processing (expressed as a number between 0.0 and 1.0, e.g. 0.9 would mean timeout at 90% of the remaining time)
- * @property {number} maxNumberOfAttempts - the maximum number of attempts on each of a message's tasks that are allowed
- * before discarding the message and routing it to the Dead Message Queue. Note that if a message has multiple tasks, it
- * will only be discarded when all of its tasks have reached this maximum
- * @property {Function} extractMessageFromRecord - a synchronous function that will be used to extract a message from a
- * given stream event record, which must accept a record and the given context as arguments and return the extracted
- * message or throw an exception if a message cannot be extracted from the record
- * @property {Function} loadTaskTrackingState - a function that will be used to load the task tracking state of the
- * entire batch of messages and that must accept: an array of the entire batch of messages and the context
- * @property {Function} saveTaskTrackingState - a function that will be used to save the task tracking state of the
- * entire batch of messages and that must accept: an array of the entire batch of messages and the context
- * @property {Function} handleIncompleteMessages - a function that will be used to handle any incomplete messages and
- * that must accept: an array of the entire batch of messages; an array of incomplete messages; and the context and
- * ideally return a promise
- * @property {Function} discardUnusableRecords - a function that will be used to discard any unusable records and that must
- * accept an array of unusable records and the context and ideally return a promise
- * @property {Function} discardRejectedMessages - a function that will be used to discard any rejected messages and that
- * must accept an array of rejected messages and the context and ideally return a promise
- * @property {string} taskTrackingTableName - the unqualified name of the Task Tracking table to which to save messages states
- * @property {string} deadRecordQueueName - the unqualified stream name of the Dead Record Queue to which to discard unusable records
- * @property {string} deadMessageQueueName - the unqualified stream name of the Dead Message Queue to which to discard rejected messages
- * @property {Object|undefined} [kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
- * @property {Object|undefined} [dynamoDBDocClientOptions] - optional DynamoDB.DocumentClient constructor options to use to configure an AWS.DynamoDB.DocumentClient instance
- */
-
-/**
- * Stream processing options which configure ONLY the property (i.e. non-function) settings of an AWS stream consumer
- * and are a subset of the full StreamProcessingSettings.
- * @typedef {Object} StreamProcessingOptions
- * @property {string} streamType - the type of stream being processed - valid values are "kinesis" or "dynamodb"
- * @property {string} taskTrackingName - the name of the task tracking object property on each message, which has or
- * will be assigned two properties: a 'ones' object property; and an 'alls' object property. The 'ones' property is a
- * map of all of the processOne tasks (i.e. the tasks for processing a single message at a time) keyed by task name.
- * The 'alls' property is a map of all of the processAll tasks (i.e. the tasks for processing all of the messages that
- * were received in a batch from an AWS stream) keyed by task name
- * @property {number} timeoutAtPercentageOfRemainingTime - the percentage of the remaining time at which to timeout
- * processing (expressed as a number between 0.0 and 1.0, e.g. 0.9 would mean timeout at 90% of the remaining time)
- * @property {number} maxNumberOfAttempts - the maximum number of attempts on each of a message's tasks that are allowed
- * before discarding the message and routing it to the Dead Message Queue. Note that if a message has multiple tasks, it
- * will only be discarded when all of its tasks have reached this maximum
- * @property {string} taskTrackingTableName - the unqualified name of the Task Tracking table from which to load and/or
- * to which to save the task tracking state of the entire batch of messages
- * @property {string} deadRecordQueueName - the unqualified stream name of the Dead Record Queue to which to discard unusable records
- * @property {string} deadMessageQueueName - the unqualified stream name of the Dead Message Queue to which to discard rejected messages
- * @property {Object|undefined} [kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
- * @property {Object|undefined} [dynamoDBDocClientOptions] - optional DynamoDB.DocumentClient constructor options to use to configure an AWS.DynamoDB.DocumentClient instance
- */
-
-/**
  * Configures the given context with the given stream processing settings (if any) otherwise with the default stream
  * processing settings partially overridden by the given stream processing options (if any), but only if stream
  * processing is not already configured on the given context OR if forceConfiguration is true.
  *
- * @param {Object} context - the context to configure
+ * @param {Object|StreamProcessing|StageHandling|Logging} context - the context to configure
  * @param {StreamProcessingSettings|undefined} [settings] - optional stream processing settings to use to configure stream processing
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use to override default options
- * @param {OtherSettings|undefined} [otherSettings] - optional other settings to use to configure dependencies
- * @param {OtherOptions|undefined} [otherOptions] - optional other options to use to configure dependencies if corresponding settings are not provided
+ * @param {SPOtherSettings|undefined} [otherSettings] - optional other settings to use to configure dependencies
+ * @param {SPOtherOptions|undefined} [otherOptions] - optional other options to use to configure dependencies if corresponding settings are not provided
  * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
- * @returns {Object} the given context
+ * @returns {StreamProcessing} the given context configured with stream processing settings, stage handling settings and
+ * logging functionality
  */
 function configureStreamProcessing(context, settings, options, otherSettings, otherOptions, forceConfiguration) {
   const settingsAvailable = settings && typeof settings === 'object';
@@ -275,13 +207,13 @@ function configureStreamProcessing(context, settings, options, otherSettings, ot
  * Configures the given context with the given stream processing settings, but only if stream processing is not
  * already configured on the given context OR if forceConfiguration is true.
  *
- * @param {Object} context - the context onto which to configure the given stream processing settings
+ * @param {Object|StreamProcessing|StageHandling|Logging} context - the context onto which to configure the given stream processing settings
  * @param {StreamProcessingSettings} settings - the stream processing settings to use
- * @param {OtherSettings|undefined} [otherSettings] - optional other settings to use to configure dependencies
- * @param {OtherOptions|undefined} [otherOptions] - optional other options to use to configure dependencies if corresponding settings are not provided
+ * @param {SPOtherSettings|undefined} [otherSettings] - optional other settings to use to configure dependencies
+ * @param {SPOtherOptions|undefined} [otherOptions] - optional other options to use to configure dependencies if corresponding settings are not provided
  * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
- * @return {Object} the context object configured with stream processing (either existing or new)
+ * @return {StreamProcessing} the context object configured with stream processing (either existing or new)
  */
 function configureStreamProcessingWithSettings(context, settings, otherSettings, otherOptions, forceConfiguration) {
   // Configure all dependencies if not configured
@@ -334,17 +266,18 @@ function resolveStreamType(settings, options) {
  * Configures the given context with the stream processing dependencies (currently stage handling and logging) using the
  * given other settings and given other options.
  *
- * @param {Object} context - the context onto which to configure the given stream processing dependencies
- * @param {OtherSettings|undefined} [otherSettings] - optional other settings to use to configure dependencies
- * @param {OtherOptions|undefined} [otherOptions] - optional other options to use to configure dependencies if no corresponding other settings are provided
+ * @param {Object|StageHandling|Logging} context - the context onto which to configure the given stream processing dependencies
+ * @param {SPOtherSettings|undefined} [otherSettings] - optional other settings to use to configure dependencies
+ * @param {SPOtherOptions|undefined} [otherOptions] - optional other options to use to configure dependencies if no corresponding other settings are provided
  * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
  * will override any previously configured dependencies' settings on the given context
- * @returns {Object} the context object configured with stream processing dependencies
+ * @returns {StageHandling} the context object configured with stream processing dependencies
  */
 function configureDependencies(context, otherSettings, otherOptions, forceConfiguration) {
   // Configure stage-handling and its dependencies (i.e. logging)
   stages.configureStageHandling(context, otherSettings ? otherSettings.stageHandlingSettings : undefined,
     otherOptions ? otherOptions.stageHandlingOptions : undefined, otherSettings, otherOptions, forceConfiguration);
+  return context;
 }
 
 /**
@@ -362,13 +295,13 @@ function configureDependencies(context, otherSettings, otherOptions, forceConfig
  *
  * @see {@linkcode configureStreamProcessing} for more information.
  *
- * @param {Object} context - the context onto which to configure the default stream processing settings
+ * @param {Object|StreamProcessing|StageHandling|Logging} context - the context onto which to configure the default stream processing settings
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use
- * @param {OtherSettings|undefined} [otherSettings] - optional other configuration settings to use
- * @param {OtherOptions|undefined} [otherOptions] - optional other configuration options to use if corresponding settings are not provided
+ * @param {SPOtherSettings|undefined} [otherSettings] - optional settings to use to configure stream processing dependencies
+ * @param {SPOtherOptions|undefined} [otherOptions] - optional options to use to configure stream processing dependencies if corresponding settings are not provided
  * @param {boolean|undefined} forceConfiguration - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
- * @return {Object} the context object configured with Kinesis stream processing settings (either existing or defaults)
+ * @return {StreamProcessing} the context object configured with Kinesis stream processing settings (either existing or defaults)
  */
 function configureDefaultKinesisStreamProcessing(context, options, otherSettings, otherOptions, forceConfiguration) {
   // Get the default Kinesis stream processing settings from the local options file
@@ -393,13 +326,13 @@ function configureDefaultKinesisStreamProcessing(context, options, otherSettings
  *
  * @see {@linkcode configureStreamProcessing} for more information.
  *
- * @param {Object} context - the context onto which to configure the default stream processing settings
+ * @param {Object|StreamProcessing|StageHandling|Logging} context - the context onto which to configure the default stream processing settings
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use
- * @param {OtherSettings|undefined} [otherSettings] - optional other configuration settings to use
- * @param {OtherOptions|undefined} [otherOptions] - optional other configuration options to use if corresponding settings are not provided
+ * @param {SPOtherSettings|undefined} [otherSettings] - optional other configuration settings to use
+ * @param {SPOtherOptions|undefined} [otherOptions] - optional other configuration options to use if corresponding settings are not provided
  * @param {boolean|undefined} forceConfiguration - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
- * @return {Object} the context object configured with DynamoDB stream processing settings (either existing or defaults)
+ * @return {StreamProcessing} the context object configured with DynamoDB stream processing settings (either existing or defaults)
  */
 function configureDefaultDynamoDBStreamProcessing(context, options, otherSettings, otherOptions, forceConfiguration) {
   // Get the default DynamoDB stream processing settings from the local options file
@@ -566,8 +499,8 @@ function validateStreamProcessingConfiguration(context) {
 
 /**
  * Returns the value of the named stream processing setting (if any) on the given context.
- * @param context - the context from which to fetch the named setting's value
- * @param settingName - the name of the stream processing setting
+ * @param {StreamProcessing} context - the context from which to fetch the named setting's value
+ * @param {string} settingName - the name of the stream processing setting
  * @returns {*|undefined} the value of the named setting (if any); otherwise undefined
  */
 function getStreamProcessingSetting(context, settingName) {
@@ -577,7 +510,7 @@ function getStreamProcessingSetting(context, settingName) {
 
 /**
  * Returns the stream type configured on the given context.
- * @param context - the context from which to fetch the stream type
+ * @param {StreamProcessing} context - the context from which to fetch the stream type
  * @returns {string|undefined} the stream type (if any); otherwise undefined
  */
 function getStreamType(context) {
@@ -594,7 +527,7 @@ function isDynamoDBStreamType(context) {
 
 /**
  * Returns the maximum number of attempts configured on the given context.
- * @param context - the context from which to fetch the maximum number of attempts
+ * @param {StreamProcessing} context - the context from which to fetch the maximum number of attempts
  * @returns {number|undefined} the maximum number of attempts (if any); otherwise undefined
  */
 function getMaxNumberOfAttempts(context) {
@@ -604,9 +537,9 @@ function getMaxNumberOfAttempts(context) {
 /**
  * Returns the function configured at the named stream processing setting on the given context (if any and if it's a
  * real function); otherwise returns undefined.
- * @param context - the context from which to fetch the function
- * @param settingName - the name of the stream processing setting
- * @returns {*|undefined} the named function (if it's a function); otherwise undefined
+ * @param {StreamProcessing} context - the context from which to fetch the function
+ * @param {string} settingName - the name of the stream processing setting
+ * @returns {Function|undefined} the named function (if it's a function); otherwise undefined
  */
 function getStreamProcessingFunction(context, settingName) {
   const fn = getStreamProcessingSetting(context, settingName);
@@ -616,8 +549,8 @@ function getStreamProcessingFunction(context, settingName) {
 /**
  * Returns the extractMessageFromRecord function configured on the given context (if any and if it's a real function);
  * otherwise returns undefined.
- * @param context - the context from which to fetch the function
- * @returns {*|undefined} the extractMessageFromRecord function (if it's a function); otherwise undefined
+ * @param {StreamProcessing} context - the context from which to fetch the function
+ * @returns {Function|undefined} the extractMessageFromRecord function (if it's a function); otherwise undefined
  */
 function getExtractMessageFromRecordFunction(context) {
   return getStreamProcessingFunction(context, EXTRACT_MESSAGE_FROM_RECORD_SETTING);
@@ -628,7 +561,7 @@ function getExtractMessageFromRecordFunction(context) {
  * the given Kinesis stream event record and returns the message (if parsable) or throws an error (if not).
  *
  * @param {Object} record - a Kinesis stream event record
- * @param {Object} context - the context
+ * @param {StreamProcessing} context - the context
  * @return {Object} the message object (if successfully extracted)
  * @throws {Error} an error if a message could not be successfully extracted from the given record
  */
@@ -653,7 +586,7 @@ function extractJsonMessageFromKinesisRecord(record, context) {
  * (if defined) or throws an error (if not).
  *
  * @param {Object} record - a stream event record
- * @param {Object} context - the context
+ * @param {StreamProcessing} context - the context
  * @return {Object} the message object if defined
  * @throws {Error} an error if the given stream event record is not defined
  */
@@ -671,8 +604,8 @@ function useStreamEventRecordAsMessage(record, context) {
 /**
  * Returns the discardUnusableRecords function configured on the given context (if any and if it's a real function);
  * otherwise returns undefined.
- * @param context - the context from which to fetch the function
- * @returns {*|undefined} the discardUnusableRecords function (if it's a function); otherwise undefined
+ * @param {StreamProcessing} context - the context from which to fetch the function
+ * @returns {Function|undefined} the discardUnusableRecords function (if it's a function); otherwise undefined
  */
 function getDiscardUnusableRecordsFunction(context) {
   return getStreamProcessingFunction(context, DISCARD_UNUSABLE_RECORDS_SETTING);
@@ -681,7 +614,7 @@ function getDiscardUnusableRecordsFunction(context) {
 /**
  * Discards all the given unusable stream event records to the DRQ (i.e. Dead Record Queue).
  * @param {Object[]} unusableRecords - the list of unusable records to discard
- * @param {Object} context - the context to use
+ * @param {StreamProcessing} context - the context to use
  * @return {Promise} a promise that will complete when all of its discard unusable record promises complete
  */
 function discardUnusableRecordsToDRQ(unusableRecords, context) {
@@ -762,8 +695,8 @@ function toDRQPutRequestFromDynamoDBUnusableRecord(record, deadRecordQueueName) 
 /**
  * Returns the discardRejectedMessages function configured on the given context (if any and if it's a real function);
  * otherwise returns undefined.
- * @param context - the context from which to fetch the function
- * @returns {*|undefined} the discardRejectedMessages function (if it's a function); otherwise undefined
+ * @param {StreamProcessing} context - the context from which to fetch the function
+ * @returns {Function|undefined} the discardRejectedMessages function (if it's a function); otherwise undefined
  */
 function getDiscardRejectedMessagesFunction(context) {
   return getStreamProcessingFunction(context, DISCARD_REJECTED_MESSAGES_SETTING);
@@ -772,7 +705,7 @@ function getDiscardRejectedMessagesFunction(context) {
 /**
  * Routes all the given rejected messages to the DMQ (i.e. Dead Message Queue).
  * @param {Array.<Object>} rejectedMessages the list of rejected messages to discard
- * @param {Object} context the context to use
+ * @param {StreamProcessing} context the context to use
  * @return {Promise}
  */
 function discardRejectedMessagesToDMQ(rejectedMessages, context) {
@@ -891,8 +824,8 @@ function toDMQPutRequestFromDynamoDBRejectedMessage(message, record, deadMessage
 /**
  * Returns the loadTaskTrackingState function configured on the given context (if any and if it's a real function);
  * otherwise returns undefined.
- * @param {Object} context - the context from which to fetch the function
- * @returns {*|undefined} the loadTaskTrackingState function (if it's a function); otherwise undefined
+ * @param {StreamProcessing} context - the context from which to fetch the function
+ * @returns {Function|undefined} the loadTaskTrackingState function (if it's a function); otherwise undefined
  */
 function getLoadTaskTrackingStateFunction(context) {
   return getStreamProcessingFunction(context, LOAD_TASK_TRACKING_STATE_SETTING);
@@ -901,8 +834,8 @@ function getLoadTaskTrackingStateFunction(context) {
 /**
  * Returns the saveTaskTrackingState function configured on the given context (if any and if it's a real function);
  * otherwise returns undefined.
- * @param {Object} context - the context from which to fetch the function
- * @returns {*|undefined} the saveTaskTrackingState function (if it's a function); otherwise undefined
+ * @param {StreamProcessing} context - the context from which to fetch the function
+ * @returns {Function|undefined} the saveTaskTrackingState function (if it's a function); otherwise undefined
  */
 function getSaveTaskTrackingStateFunction(context) {
   return getStreamProcessingFunction(context, SAVE_TASK_TRACKING_STATE_SETTING);
@@ -911,8 +844,8 @@ function getSaveTaskTrackingStateFunction(context) {
 /**
  * Returns the handleIncompleteMessages function configured on the given context (if any and if it's a real function);
  * otherwise returns undefined.
- * @param context - the context from which to fetch the function
- * @returns {*|undefined} the handleIncompleteMessages function (if it's a function); otherwise undefined
+ * @param {StreamProcessing} context - the context from which to fetch the function
+ * @returns {Function|undefined} the handleIncompleteMessages function (if it's a function); otherwise undefined
  */
 function getHandleIncompleteMessagesFunction(context) {
   return getStreamProcessingFunction(context, HANDLE_INCOMPLETE_MESSAGES_SETTING);
@@ -923,7 +856,7 @@ function getHandleIncompleteMessagesFunction(context) {
  * their source Kinesis stream.
  * @param {Object[]} messages - the entire batch of messages
  * @param {Object[]} incompleteMessages - the incomplete messages to be resubmitted
- * @param {Object} context - the context
+ * @param {StreamProcessing} context - the context
  * @returns {Promise} a promise that will complete when all of the resubmit incomplete message promises have completed
  */
 function resubmitIncompleteMessagesToKinesis(messages, incompleteMessages, context) {
@@ -992,7 +925,7 @@ function resubmitIncompleteMessagesToKinesis(messages, incompleteMessages, conte
  * resubmission and because sequence is critical for DynamoDB stream events.
  * @param {Object[]} messages - the entire batch of messages
  * @param {Object[]} incompleteMessages - the incomplete messages
- * @param {Object} context - the context
+ * @param {StreamProcessing} context - the context
  * @returns {Promise} a promise that will either reject (if there are any incomplete messages) or resolve successfully (if not)
  */
 function replayAllMessagesIfIncomplete(messages, incompleteMessages, context) {
@@ -1043,7 +976,7 @@ function getRecord(message, context) {
  * since the default Kinesis stream consumer behaviour is to resubmit incomplete messages along with their task tracking
  * state back to Kinesis, which means no task tracking state needs to be saved externally.
  * @param {Object[]} messages - the entire batch of messages being processed
- * @param {Object} context - the context to use
+ * @param {StreamProcessing} context - the context to use
  * @returns {Promise.<*>} a promise that will do nothing other than return the given messages
  */
 function skipLoadTaskTrackingState(messages, context) {
@@ -1058,7 +991,7 @@ function skipLoadTaskTrackingState(messages, context) {
  * since the default Kinesis stream consumer behaviour is to resubmit incomplete messages along with their task tracking
  * state back to Kinesis, which means no task tracking state needs to be saved externally.
  * @param {Object[]} messages - the entire batch of messages being processed
- * @param {Object} context - the context to use
+ * @param {StreamProcessing} context - the context to use
  * @returns {Promise.<*>} a promise that will do nothing other than return the given messages
  */
 function skipSaveTaskTrackingState(messages, context) {
@@ -1079,7 +1012,7 @@ function loadTaskTrackingStateFromDynamoDB(messages, context) {
     return Promise.resolve(messages);
   }
 
-  const taskTrackingName = context.streamProcessing.taskTrackingName;
+  //const taskTrackingName = context.streamProcessing.taskTrackingName;
 
 }
 
@@ -1097,7 +1030,7 @@ function saveTaskTrackingStateToDynamoDB(messages, context) {
   const taskTrackingName = context.streamProcessing.taskTrackingName;
 
   const unqualifiedTaskTrackingTableName = context.streamProcessing.taskTrackingTableName; //TODO configure
-  const taskTrackingTableName = stages.toStageQualifiedResourceName(unqualifiedTaskTrackingTableName, context.stage, context);
+  const tableName = stages.toStageQualifiedResourceName(unqualifiedTaskTrackingTableName, context.stage, context);
 
 
   const dynamoDBDocClient = getDynamoDBDocClient(context);
