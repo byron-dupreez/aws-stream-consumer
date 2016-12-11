@@ -130,6 +130,7 @@ module.exports = {
 
 const regions = require('aws-core-utils/regions');
 const stages = require('aws-core-utils/stages');
+const contexts = require('aws-core-utils/contexts');
 const arns = require('aws-core-utils/arns');
 const streamEvents = require('aws-core-utils/stream-events');
 const kinesisCache = require('aws-core-utils/kinesis-cache');
@@ -159,26 +160,31 @@ function isStreamProcessingConfigured(context) {
 }
 
 /**
- * Configures the given context with the given stream processing settings (if any) otherwise with the default stream
- * processing settings partially overridden by the given stream processing options (if any), but only if stream
- * processing is not already configured on the given context OR if forceConfiguration is true.
+ * Configures the given context as a standard context with the given standard settings and standard options and with
+ * EITHER the given stream processing settings (if any) OR the default stream processing settings partially overridden
+ * by the given stream processing options (if any), but only if stream processing is not already configured on the given
+ * context OR if forceConfiguration is true.
  *
- * @param {Object|StreamProcessing|StageHandling|Logging} context - the context to configure
+ * Note that if either the given event or AWS context are undefined, then everything other than the region, stage and
+ * AWS context will be configured. This missing configuration can be configured at a later point in your code by
+ * invoking {@linkcode stages#configureRegionStageAndAwsContext}. This separation of configuration is primarily useful
+ * for unit testing.
+ *
+ * @param {Object|StreamProcessing|StandardContext} context - the context to configure
  * @param {StreamProcessingSettings|undefined} [settings] - optional stream processing settings to use to configure stream processing
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use to override default options
- * @param {SPOtherSettings|undefined} [otherSettings] - optional other settings to use to configure dependencies
- * @param {SPOtherOptions|undefined} [otherOptions] - optional other options to use to configure dependencies if corresponding settings are not provided
+ * @param {StandardSettings|undefined} [standardSettings] - optional standard settings to use to configure dependencies
+ * @param {StandardOptions|undefined} [standardOptions] - optional other options to use to configure dependencies
+ * @param {Object|undefined} [event] - the AWS event, which was passed to your lambda
+ * @param {Object|undefined} [awsContext] - the AWS context, which was passed to your lambda
  * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
  * @returns {StreamProcessing} the given context configured with stream processing settings, stage handling settings and
  * logging functionality
  */
-function configureStreamProcessing(context, settings, options, otherSettings, otherOptions, forceConfiguration) {
+function configureStreamProcessing(context, settings, options, standardSettings, standardOptions, event, awsContext, forceConfiguration) {
   const settingsAvailable = settings && typeof settings === 'object';
   const optionsAvailable = options && typeof options === 'object';
-
-  // // First configure all stream processing dependencies
-  // configureDependencies(context, otherSettings, otherOptions, forceConfiguration);
 
   // Check if stream processing was already configured
   const streamProcessingWasConfigured = isStreamProcessingConfigured(context);
@@ -194,7 +200,8 @@ function configureStreamProcessing(context, settings, options, otherSettings, ot
     Objects.merge(defaultSettings, settings, false, false) : defaultSettings;
 
   // Configure stream processing with the given or derived stream processing settings
-  configureStreamProcessingWithSettings(context, streamProcessingSettings, otherSettings, otherOptions, forceConfiguration);
+  configureStreamProcessingWithSettings(context, streamProcessingSettings, standardSettings, standardOptions, event,
+    awsContext, forceConfiguration);
 
   // Log a warning if no settings and no options were provided and the default settings were applied
   if (!settingsAvailable && !optionsAvailable && (forceConfiguration || !streamProcessingWasConfigured)) {
@@ -204,20 +211,31 @@ function configureStreamProcessing(context, settings, options, otherSettings, ot
 }
 
 /**
- * Configures the given context with the given stream processing settings, but only if stream processing is not
- * already configured on the given context OR if forceConfiguration is true.
+ * Configures the given context with the given stream processing settings, but only if stream processing is not already
+ * configured on the given context OR if forceConfiguration is true, and with the given standard settings and options.
  *
- * @param {Object|StreamProcessing|StageHandling|Logging} context - the context onto which to configure the given stream processing settings
+ * Note that if either the given event or AWS context are undefined, then everything other than the region, stage and
+ * AWS context will be configured. This missing configuration can be configured at a later point in your code by
+ * invoking {@linkcode stages#configureRegionStageAndAwsContext}. This separation of configuration is primarily useful
+ * for unit testing.
+ *
+ * @param {Object|StreamProcessing|StandardContext} context - the context onto which to configure the given stream processing settings and standard settings
  * @param {StreamProcessingSettings} settings - the stream processing settings to use
- * @param {SPOtherSettings|undefined} [otherSettings] - optional other settings to use to configure dependencies
- * @param {SPOtherOptions|undefined} [otherOptions] - optional other options to use to configure dependencies if corresponding settings are not provided
- * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
- * will override any previously configured stream processing settings on the given context
- * @return {StreamProcessing} the context object configured with stream processing (either existing or new)
+ * @param {StandardSettings|undefined} [standardSettings] - optional standard settings to use to configure dependencies
+ * @param {StandardOptions|undefined} [standardOptions] - optional standard options to use to configure dependencies
+ * @param {Object|undefined} [event] - the AWS event, which was passed to your lambda
+ * @param {Object|undefined} [awsContext] - the AWS context, which was passed to your lambda
+ * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings and
+ * options, which will override any previously configured stream processing and stage handling settings on the given context
+ * @return {StreamProcessing} the context object configured with stream processing (either existing or new) and standard settings
  */
-function configureStreamProcessingWithSettings(context, settings, otherSettings, otherOptions, forceConfiguration) {
-  // Configure all dependencies if not configured
-  configureDependencies(context, otherSettings, otherOptions, forceConfiguration);
+function configureStreamProcessingWithSettings(context, settings, standardSettings, standardOptions, event, awsContext, forceConfiguration) {
+  // Configure all of the stream processing dependencies if not configured by configuring the given context as a
+  // standard context with stage handling, logging, custom settings, an optional Kinesis instance and an optional
+  // DynamoDB.DocumentClient instance using the given standard settings and standard options and ALSO optionally with
+  // the current region, resolved stage and AWS context, if BOTH the optional given event and optional given AWS context
+  // are defined
+  contexts.configureStandardContext(context, standardSettings, standardOptions, event, awsContext, forceConfiguration);
 
   // If forceConfiguration is false check if the given context already has stream processing configured on it
   // and, if so, do nothing more and simply return the context as is (to prevent overriding an earlier configuration)
@@ -227,20 +245,6 @@ function configureStreamProcessingWithSettings(context, settings, otherSettings,
 
   // Configure stream processing with the given settings
   context.streamProcessing = settings;
-
-  // Configure a Kinesis instance (if needed and not already configured)
-  if (!context.kinesis) {
-    if (context.streamProcessing && context.streamProcessing.kinesisOptions && typeof context.streamProcessing.kinesisOptions === 'object') {
-      kinesisCache.configureKinesis(context, context.streamProcessing.kinesisOptions);
-    }
-  }
-
-  // Configure a DynamoDB document client instance (if needed and not already configured)
-  if (!context.dynamoDBDocClient) {
-    if (context.streamProcessing && context.streamProcessing.dynamoDBDocClientOptions && typeof context.streamProcessing.dynamoDBDocClientOptions === 'object') {
-      dynamoDBDocClientCache.configureDynamoDBDocClient(context, context.streamProcessing.dynamoDBDocClientOptions);
-    }
-  }
 
   // Validate the stream processing configuration
   validateStreamProcessingConfiguration(context);
@@ -263,26 +267,9 @@ function resolveStreamType(settings, options) {
 }
 
 /**
- * Configures the given context with the stream processing dependencies (currently stage handling and logging) using the
- * given other settings and given other options.
- *
- * @param {Object|StageHandling|Logging} context - the context onto which to configure the given stream processing dependencies
- * @param {SPOtherSettings|undefined} [otherSettings] - optional other settings to use to configure dependencies
- * @param {SPOtherOptions|undefined} [otherOptions] - optional other options to use to configure dependencies if no corresponding other settings are provided
- * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
- * will override any previously configured dependencies' settings on the given context
- * @returns {StageHandling} the context object configured with stream processing dependencies
- */
-function configureDependencies(context, otherSettings, otherOptions, forceConfiguration) {
-  // Configure stage-handling and its dependencies (i.e. logging)
-  stages.configureStageHandling(context, otherSettings ? otherSettings.stageHandlingSettings : undefined,
-    otherOptions ? otherOptions.stageHandlingOptions : undefined, otherSettings, otherOptions, forceConfiguration);
-  return context;
-}
-
-/**
- * Configures the given context with the default Kinesis stream processing settings, but only if stream processing is
- * NOT already configured on the given context OR if forceConfiguration is true.
+ * Configures the given context as a standard context with the given standard settings and standard options and ALSO
+ * with the default Kinesis stream processing settings partially overridden by the given stream processing options (if
+ * any), but ONLY if stream processing is not already configured on the given context OR if forceConfiguration is true.
  *
  * Default Kinesis stream processing assumes the following:
  * - The stream event record is a Kinesis record
@@ -295,25 +282,36 @@ function configureDependencies(context, otherSettings, otherOptions, forceConfig
  *
  * @see {@linkcode configureStreamProcessing} for more information.
  *
- * @param {Object|StreamProcessing|StageHandling|Logging} context - the context onto which to configure the default stream processing settings
+ * Note that if either the given event or AWS context are undefined, then everything other than the region, stage and
+ * AWS context will be configured. This missing configuration can be configured at a later point in your code by
+ * invoking {@linkcode stages#configureRegionStageAndAwsContext}. This separation of configuration is primarily useful
+ * for unit testing.
+ *
+ * @param {Object|StreamProcessing|StandardContext} context - the context onto which to configure the default stream processing settings
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use
- * @param {SPOtherSettings|undefined} [otherSettings] - optional settings to use to configure stream processing dependencies
- * @param {SPOtherOptions|undefined} [otherOptions] - optional options to use to configure stream processing dependencies if corresponding settings are not provided
+ * @param {StandardSettings|undefined} [standardSettings] - optional standard settings to use to configure dependencies
+ * @param {StandardOptions|undefined} [standardOptions] - optional standard options to use to configure dependencies
+ * @param {Object|undefined} [event] - the AWS event, which was passed to your lambda
+ * @param {Object|undefined} [awsContext] - the AWS context, which was passed to your lambda
  * @param {boolean|undefined} forceConfiguration - whether or not to force configuration of the given settings, which
- * will override any previously configured stream processing settings on the given context
+ * will override any previously configured stream processing and stage handling settings on the given context
  * @return {StreamProcessing} the context object configured with Kinesis stream processing settings (either existing or defaults)
  */
-function configureDefaultKinesisStreamProcessing(context, options, otherSettings, otherOptions, forceConfiguration) {
+function configureDefaultKinesisStreamProcessing(context, options, standardSettings, standardOptions, event, awsContext, forceConfiguration) {
   // Get the default Kinesis stream processing settings from the local options file
   const settings = getDefaultKinesisStreamProcessingSettings(options);
+
   // Configure the context with the default stream processing settings defined above
-  configureStreamProcessingWithSettings(context, settings, otherSettings, otherOptions, forceConfiguration);
+  configureStreamProcessingWithSettings(context, settings, standardSettings, standardOptions, event, awsContext,
+    forceConfiguration);
+
   return context;
 }
 
 /**
- * Configures the given context with the default DynamoDB stream processing settings, but only if stream processing is
- * NOT already configured on the given context OR if forceConfiguration is true.
+ * Configures the given context as a standard context with the given standard settings and standard options and ALSO
+ * with the default DynamoDB stream processing settings partially overridden by the given stream processing options (if
+ * any), but ONLY if stream processing is not already configured on the given context OR if forceConfiguration is true.
  *
  * Default DynamoDB stream processing assumes the following:
  * - The stream event record is a DynamoDB stream event record
@@ -326,19 +324,28 @@ function configureDefaultKinesisStreamProcessing(context, options, otherSettings
  *
  * @see {@linkcode configureStreamProcessing} for more information.
  *
- * @param {Object|StreamProcessing|StageHandling|Logging} context - the context onto which to configure the default stream processing settings
+ * Note that if either the given event or AWS context are undefined, then everything other than the region, stage and
+ * AWS context will be configured. This missing configuration can be configured at a later point in your code by
+ * invoking {@linkcode stages#configureRegionStageAndAwsContext}. This separation of configuration is primarily useful
+ * for unit testing.
+ *
+ * @param {Object|StreamProcessing|StandardContext} context - the context onto which to configure the default stream processing settings
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use
- * @param {SPOtherSettings|undefined} [otherSettings] - optional other configuration settings to use
- * @param {SPOtherOptions|undefined} [otherOptions] - optional other configuration options to use if corresponding settings are not provided
- * @param {boolean|undefined} forceConfiguration - whether or not to force configuration of the given settings, which
- * will override any previously configured stream processing settings on the given context
+ * @param {StandardSettings|undefined} [standardSettings] - optional standard settings to use to configure dependencies
+ * @param {StandardOptions|undefined} [standardOptions] - optional standard options to use to configure dependencies
+ * @param {Object|undefined} [event] - the AWS event, which was passed to your lambda
+ * @param {Object|undefined} [awsContext] - the AWS context, which was passed to your lambda
+ * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
+ * will override any previously configured stream processing and stage handling settings on the given context
  * @return {StreamProcessing} the context object configured with DynamoDB stream processing settings (either existing or defaults)
  */
-function configureDefaultDynamoDBStreamProcessing(context, options, otherSettings, otherOptions, forceConfiguration) {
+function configureDefaultDynamoDBStreamProcessing(context, options, standardSettings, standardOptions, event, awsContext, forceConfiguration) {
   // Get the default DynamoDB stream processing settings from the local options file
   const settings = getDefaultDynamoDBStreamProcessingSettings(options);
+
   // Configure the context with the default stream processing settings defined above
-  configureStreamProcessingWithSettings(context, settings, otherSettings, otherOptions, forceConfiguration);
+  configureStreamProcessingWithSettings(context, settings, standardSettings, standardOptions, event, awsContext, forceConfiguration);
+
   return context;
 }
 
@@ -356,7 +363,7 @@ function configureDefaultDynamoDBStreamProcessing(context, options, otherSetting
 function getDefaultKinesisStreamProcessingSettings(options) {
   const settings = options && typeof options === 'object' ? Objects.copy(options, true) : {};
 
-  // Load defaults from local kinesis-options.json file
+  // Load defaults from local default-kinesis-options.json file
   const defaultOptions = loadDefaultKinesisStreamProcessingOptions();
   Objects.merge(defaultOptions, settings, false, false);
 
@@ -386,7 +393,7 @@ function getDefaultKinesisStreamProcessingSettings(options) {
 function getDefaultDynamoDBStreamProcessingSettings(options) {
   const settings = options && typeof options === 'object' ? Objects.copy(options, true) : {};
 
-  // Load defaults from local dynamodb-options.json file
+  // Load defaults from local default-dynamodb-options.json file
   const defaultOptions = loadDefaultDynamoDBStreamProcessingOptions();
   Objects.merge(defaultOptions, settings, false, false);
 
@@ -403,12 +410,12 @@ function getDefaultDynamoDBStreamProcessingSettings(options) {
 }
 
 /**
- * Loads the default Kinesis stream processing options from the local kinesis-options.json file and fills in any missing
+ * Loads the default Kinesis stream processing options from the local default-kinesis-options.json file and fills in any missing
  * options with the static default options.
  * @returns {StreamProcessingOptions} the default stream processing options
  */
 function loadDefaultKinesisStreamProcessingOptions() {
-  const options = require('./kinesis-options.json');
+  const options = require('./default-kinesis-options.json');
   const defaultOptions = options && options.streamProcessingOptions && typeof options.streamProcessingOptions === 'object' ?
     options.streamProcessingOptions : {};
 
@@ -431,12 +438,12 @@ function loadDefaultKinesisStreamProcessingOptions() {
 }
 
 /**
- * Loads the default DynamoDB stream processing options from the local dynamodb-options.json file and fills in any
+ * Loads the default DynamoDB stream processing options from the local default-dynamodb-options.json file and fills in any
  * missing options with the static default options.
  * @returns {StreamProcessingOptions} the default stream processing options
  */
 function loadDefaultDynamoDBStreamProcessingOptions() {
-  const options = require('./dynamodb-options.json');
+  const options = require('./default-dynamodb-options.json');
   const defaultOptions = options && options.streamProcessingOptions && typeof options.streamProcessingOptions === 'object' ?
     options.streamProcessingOptions : {};
 
@@ -948,7 +955,7 @@ function replayAllMessagesIfIncomplete(messages, incompleteMessages, context) {
 function getKinesis(context) {
   if (!context.kinesis) {
     // Configure a default Kinesis instance on context.kinesis if not already configured
-    const kinesisOptions = require('./kinesis-options.json').streamProcessingOptions.kinesisOptions;
+    const kinesisOptions = require('./default-kinesis-options.json').kinesisOptions;
     context.warn(`An AWS Kinesis instance was not configured on context.kinesis yet - configuring an instance with default options (${stringify(kinesisOptions)}). Preferably configure this beforehand, using aws-core-utils/kinesis-cache#configureKinesis`);
     kinesisCache.configureKinesis(context, kinesisOptions);
   }
@@ -958,7 +965,7 @@ function getKinesis(context) {
 function getDynamoDBDocClient(context) {
   if (!context.dynamoDBDocClient) {
     // Configure a default AWS DynamoDB.DocumentClient instance on context.dynamoDBDocClient if not already configured
-    const dynamoDBDocClientOptions = require('./dynamodb-options.json').streamProcessingOptions.dynamoDBDocClientOptions;
+    const dynamoDBDocClientOptions = require('./default-dynamodb-options.json').dynamoDBDocClientOptions;
     context.warn(`An AWS DynamoDB.DocumentClient instance was not configured on context.dynamoDBDocClient yet - configuring an instance with default options (${stringify(dynamoDBDocClientOptions)}). Preferably configure this beforehand, using aws-core-utils/dynamodb-doc-client-cache#configureDynamoDBDocClient`);
     dynamoDBDocClientCache.configureDynamoDBDocClient(context, dynamoDBDocClientOptions);
   }

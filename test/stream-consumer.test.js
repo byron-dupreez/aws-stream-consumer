@@ -35,14 +35,6 @@ const logging = require("logging-utils");
 
 const samples = require("./samples");
 
-const testing = require("./testing");
-// const okNotOk = testing.okNotOk;
-// const checkOkNotOk = testing.checkOkNotOk;
-// const checkMethodOkNotOk = testing.checkMethodOkNotOk;
-const equal = testing.equal;
-// const checkEqual = testing.checkEqual;
-// const checkMethodEqual = testing.checkMethodEqual;
-
 function setupRegion(region) {
   regions.ONLY_FOR_TESTING.setRegionIfNotSet(region);
   return regions.getRegion(true);
@@ -71,7 +63,7 @@ function sampleAwsContext(functionVersion, functionAlias, maxTimeInMillis) {
 }
 
 function configureDefaults(t, context, kinesisError) {
-  const options = require('../kinesis-options.json');
+  const options = require('../default-kinesis-options.json');
   logging.configureDefaultLogging(context, options.loggingOptions);
   stages.configureDefaultStageHandling(context, options.stageHandlingOptions);
   context.kinesis = dummyKinesis(t, 'Stream consumer', kinesisError);
@@ -422,9 +414,9 @@ test('processStreamEvent with 1 message that succeeds all tasks', t => {
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -494,9 +486,9 @@ test('processStreamEvent with 1 message that succeeds all tasks (despite broken 
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -568,9 +560,9 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -643,9 +635,9 @@ test('processStreamEvent with 1 unusable record', t => {
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -711,9 +703,9 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(messages => {
@@ -803,9 +795,9 @@ test('processStreamEvent with 1 message that fails its processOne task, resubmit
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -875,9 +867,9 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(messages => {
@@ -966,9 +958,9 @@ test('processStreamEvent with 1 message that fails its processAll task, resubmit
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -1038,9 +1030,9 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(messages => {
@@ -1147,9 +1139,9 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -1225,9 +1217,9 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(messages => {
@@ -1322,9 +1314,9 @@ test('processStreamEvent with 1 message that rejects - must discard rejected mes
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -1401,9 +1393,9 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(messages => {
@@ -1530,9 +1522,9 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -1635,9 +1627,9 @@ test('processStreamEvent with 1 message that exceeds max number of attempts on a
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -1758,9 +1750,9 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -1834,9 +1826,9 @@ test('processStreamEvent with 1 message and triggered timeout promise, must resu
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(results => {
@@ -1903,9 +1895,9 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
       t.fail(`processStreamEvent should have returned a promise`);
     }
 
-    equal(t, context.region, region, 'context.region');
-    equal(t, context.stage, 'dev1', 'context.stage');
-    equal(t, context.awsContext, awsContext, 'context.awsContext');
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
     promise
       .then(messages => {

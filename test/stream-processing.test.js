@@ -85,16 +85,22 @@ const stages = require("aws-core-utils/stages");
 const kinesisCache = require("aws-core-utils/kinesis-cache");
 const dynamoDBDocClientCache = require("aws-core-utils/dynamodb-doc-client-cache");
 
-// Testing dependencies
-const testing = require("./testing");
-// const okNotOk = testing.okNotOk;
-// const checkOkNotOk = testing.checkOkNotOk;
-// const checkMethodOkNotOk = testing.checkMethodOkNotOk;
-const equal = testing.equal;
-// const checkEqual = testing.checkEqual;
-// const checkMethodEqual = testing.checkMethodEqual;
-
 const samples = require("./samples");
+const strings = require("core-functions/strings");
+const stringify = strings.stringify;
+
+function sampleAwsEvent(streamName, partitionKey, data, omitEventSourceARN) {
+  const region = process.env.AWS_REGION;
+  const eventSourceArn = omitEventSourceARN ? undefined : samples.sampleKinesisEventSourceArn(region, streamName);
+  return samples.sampleKinesisEventWithSampleRecord(partitionKey, data, eventSourceArn, region);
+}
+
+function sampleAwsContext(functionVersion, functionAlias) {
+  const region = process.env.AWS_REGION;
+  const functionName = 'sampleFunctionName';
+  const invokedFunctionArn = samples.sampleInvokedFunctionArn(region, functionName, functionAlias);
+  return samples.sampleAwsContext(functionName, functionVersion, invokedFunctionArn);
+}
 
 function dummyKinesis(t, prefix, error) {
   return {
@@ -128,7 +134,7 @@ function sampleMessage() {
 }
 
 function toOptions(streamType, taskTrackingName, timeoutAtPercentageOfRemainingTime, maxNumberOfAttempts,
-  taskTrackingTableName, deadRecordQueueName, deadMessageQueueName, kinesisOptions, dynamoDBDocClientOptions) {
+  taskTrackingTableName, deadRecordQueueName, deadMessageQueueName) {
 
   return {
     // generic settings
@@ -139,18 +145,14 @@ function toOptions(streamType, taskTrackingName, timeoutAtPercentageOfRemainingT
     // specialised settings needed by default implementations
     taskTrackingTableName: taskTrackingTableName,
     deadRecordQueueName: deadRecordQueueName,
-    deadMessageQueueName: deadMessageQueueName,
-    // Kinesis & DynamoDB DocumentClient constructor options
-    kinesisOptions: kinesisOptions,
-    dynamoDBDocClientOptions: dynamoDBDocClientOptions
+    deadMessageQueueName: deadMessageQueueName
   };
 }
 
 
 function toSettings(streamType, taskTrackingName, timeoutAtPercentageOfRemainingTime, maxNumberOfAttempts,
   extractMessageFromRecord, loadTaskTrackingState, saveTaskTrackingState, handleIncompleteMessages,
-  discardUnusableRecords, discardRejectedMessages, taskTrackingTableName, deadRecordQueueName, deadMessageQueueName,
-  kinesisOptions, dynamoDBDocClientOptions) {
+  discardUnusableRecords, discardRejectedMessages, taskTrackingTableName, deadRecordQueueName, deadMessageQueueName) {
 
   return {
     // generic settings
@@ -168,10 +170,20 @@ function toSettings(streamType, taskTrackingName, timeoutAtPercentageOfRemaining
     // specialised settings needed by default implementations
     taskTrackingTableName: taskTrackingTableName,
     deadRecordQueueName: deadRecordQueueName,
-    deadMessageQueueName: deadMessageQueueName,
-    // Kinesis & DynamoDB DocumentClient constructor options
-    kinesisOptions: kinesisOptions,
-    dynamoDBDocClientOptions: dynamoDBDocClientOptions
+    deadMessageQueueName: deadMessageQueueName
+  };
+}
+function toSettingsWithFunctionsOnly(extractMessageFromRecord, loadTaskTrackingState, saveTaskTrackingState,
+  handleIncompleteMessages, discardUnusableRecords, discardRejectedMessages) {
+
+  return {
+    // functions
+    extractMessageFromRecord: extractMessageFromRecord,
+    loadTaskTrackingState: loadTaskTrackingState,
+    saveTaskTrackingState: saveTaskTrackingState,
+    handleIncompleteMessages: handleIncompleteMessages,
+    discardUnusableRecords: discardUnusableRecords,
+    discardRejectedMessages: discardRejectedMessages
   };
 }
 
@@ -179,62 +191,110 @@ function checkSettings(t, context, before, mustChange, expectedSettings) {
   t.ok(isStreamProcessingConfigured(context), `Default stream processing must be configured now`);
 
   const after = context.streamProcessing;
-  equal(t, after.streamType, mustChange ? expectedSettings.streamType : before.streamType, 'streamType');
-  equal(t, after.taskTrackingName, mustChange ? expectedSettings.taskTrackingName : before.taskTrackingName, 'taskTrackingName');
-  equal(t, after.timeoutAtPercentageOfRemainingTime, mustChange ? expectedSettings.timeoutAtPercentageOfRemainingTime : before.timeoutAtPercentageOfRemainingTime, 'timeoutAtPercentageOfRemainingTime');
-  equal(t, after.maxNumberOfAttempts, mustChange ? expectedSettings.maxNumberOfAttempts : before.maxNumberOfAttempts, 'maxNumberOfAttempts');
-  equal(t, after.extractMessageFromRecord, mustChange ? expectedSettings.extractMessageFromRecord : before.extractMessageFromRecord, 'extractMessageFromRecord');
-  equal(t, after.loadTaskTrackingState, mustChange ? expectedSettings.loadTaskTrackingState : before.loadTaskTrackingState, 'loadTaskTrackingState');
-  equal(t, after.saveTaskTrackingState, mustChange ? expectedSettings.saveTaskTrackingState : before.saveTaskTrackingState, 'saveTaskTrackingState');
-  equal(t, after.handleIncompleteMessages, mustChange ? expectedSettings.handleIncompleteMessages : before.handleIncompleteMessages, 'handleIncompleteMessages');
-  equal(t, after.discardUnusableRecords, mustChange ? expectedSettings.discardUnusableRecords : before.discardUnusableRecords, 'discardUnusableRecords');
-  equal(t, after.discardRejectedMessages, mustChange ? expectedSettings.discardRejectedMessages : before.discardRejectedMessages, 'discardRejectedMessages');
-  equal(t, after.taskTrackingTableName, mustChange ? expectedSettings.taskTrackingTableName : before.taskTrackingTableName, 'taskTrackingTableName');
-  equal(t, after.deadRecordQueueName, mustChange ? expectedSettings.deadRecordQueueName : before.deadRecordQueueName, 'deadRecordQueueName');
-  equal(t, after.deadMessageQueueName, mustChange ? expectedSettings.deadMessageQueueName : before.deadMessageQueueName, 'deadMessageQueueName');
-  equal(t, after.kinesisOptions, mustChange ? expectedSettings.kinesisOptions : before.kinesisOptions, 'kinesisOptions');
-  equal(t, after.dynamoDBDocClientOptions, mustChange ? expectedSettings.dynamoDBDocClientOptions : before.dynamoDBDocClientOptions, 'dynamoDBDocClientOptions');
+
+  const expectedStreamType = mustChange ? expectedSettings.streamType : before.streamType;
+  const expectedTaskTrackingName = mustChange ? expectedSettings.taskTrackingName : before.taskTrackingName;
+  const expectedTimeoutAtPercentageOfRemainingTime = mustChange ? expectedSettings.timeoutAtPercentageOfRemainingTime : before.timeoutAtPercentageOfRemainingTime;
+  const expectedMaxNumberOfAttempts = mustChange ? expectedSettings.maxNumberOfAttempts : before.maxNumberOfAttempts;
+  const expectedExtractMessageFromRecord = mustChange ? expectedSettings.extractMessageFromRecord : before.extractMessageFromRecord;
+  const expectedLoadTaskTrackingState = mustChange ? expectedSettings.loadTaskTrackingState : before.loadTaskTrackingState;
+  const expectedSaveTaskTrackingState = mustChange ? expectedSettings.saveTaskTrackingState : before.saveTaskTrackingState;
+  const expectedHandleIncompleteMessages = mustChange ? expectedSettings.handleIncompleteMessages : before.handleIncompleteMessages;
+  const expectedDiscardUnusableRecords = mustChange ? expectedSettings.discardUnusableRecords : before.discardUnusableRecords;
+  const expectedDiscardRejectedMessages = mustChange ? expectedSettings.discardRejectedMessages : before.discardRejectedMessages;
+  const expectedTaskTrackingTableName = mustChange ? expectedSettings.taskTrackingTableName : before.taskTrackingTableName;
+  const expectedDeadRecordQueueName = mustChange ? expectedSettings.deadRecordQueueName : before.deadRecordQueueName;
+  const expectedDeadMessageQueueName = mustChange ? expectedSettings.deadMessageQueueName : before.deadMessageQueueName;
+
+  t.equal(after.streamType, expectedStreamType, `streamType must be ${expectedStreamType}`);
+  t.equal(after.taskTrackingName, expectedTaskTrackingName, `taskTrackingName must be ${expectedTaskTrackingName}`);
+  t.equal(after.timeoutAtPercentageOfRemainingTime, expectedTimeoutAtPercentageOfRemainingTime, `timeoutAtPercentageOfRemainingTime must be ${expectedTimeoutAtPercentageOfRemainingTime}`);
+  t.equal(after.maxNumberOfAttempts, expectedMaxNumberOfAttempts, `maxNumberOfAttempts must be ${expectedMaxNumberOfAttempts}`);
+  t.equal(after.extractMessageFromRecord, expectedExtractMessageFromRecord, `extractMessageFromRecord must be ${stringify(expectedExtractMessageFromRecord)}`);
+  t.equal(after.loadTaskTrackingState, expectedLoadTaskTrackingState, `loadTaskTrackingState must be ${stringify(expectedLoadTaskTrackingState)}`);
+  t.equal(after.saveTaskTrackingState, expectedSaveTaskTrackingState, `saveTaskTrackingState must be ${stringify(expectedSaveTaskTrackingState)}`);
+  t.equal(after.handleIncompleteMessages, expectedHandleIncompleteMessages, `handleIncompleteMessages must be ${stringify(expectedHandleIncompleteMessages)}`);
+  t.equal(after.discardUnusableRecords, expectedDiscardUnusableRecords, `discardUnusableRecords must be ${stringify(expectedDiscardUnusableRecords)}`);
+  t.equal(after.discardRejectedMessages, expectedDiscardRejectedMessages, `discardRejectedMessages must be ${stringify(expectedDiscardRejectedMessages)}`);
+  t.equal(after.taskTrackingTableName, expectedTaskTrackingTableName, `taskTrackingTableName must be ${expectedTaskTrackingTableName}`);
+  t.equal(after.deadRecordQueueName, expectedDeadRecordQueueName, `deadRecordQueueName must be ${expectedDeadRecordQueueName}`);
+  t.equal(after.deadMessageQueueName, expectedDeadMessageQueueName, `deadMessageQueueName must be ${expectedDeadMessageQueueName}`);
+}
+
+function checkDependencies(t, context, stdSettings, stdOptions, event, awsContext, expectedStage) {
+  t.ok(logging.isLoggingConfigured(context), `logging must be configured`);
+  t.ok(stages.isStageHandlingConfigured(context), `stage handling must be configured`);
+  t.ok(context.custom && typeof context.custom === 'object', `context.custom must be configured`);
+
+  const kinesisOptions = stdSettings && stdSettings.kinesisOptions ? stdSettings.kinesisOptions :
+    stdOptions && stdOptions.kinesisOptions ? stdOptions.kinesisOptions : undefined;
+
+  const dynamoDBDocClientOptions = stdSettings && stdSettings.dynamoDBDocClientOptions ? stdSettings.dynamoDBDocClientOptions :
+    stdOptions && stdOptions.dynamoDBDocClientOptions ? stdOptions.dynamoDBDocClientOptions : undefined;
 
   // Check Kinesis instance is also configured
   const region = regions.getRegion();
-  if (expectedSettings.kinesisOptions) {
-    t.ok(context.kinesis, 'context.kinesis must be configured');
-    equal(t, context.kinesis.config.region, region, 'context.kinesis.config.region');
-    equal(t, context.kinesis.config.maxRetries, expectedSettings.kinesisOptions.maxRetries, 'context.kinesis.config.maxRetries');
+  if (kinesisOptions) {
+    t.ok(context.kinesis && typeof context.kinesis === 'object', 'context.kinesis must be configured');
+    t.equal(context.kinesis.config.region, region, `context.kinesis.config.region (${context.kinesis.config.region}) must be ${region}`);
+    t.equal(context.kinesis.config.maxRetries, kinesisOptions.maxRetries, `context.kinesis.config.maxRetries (${context.kinesis.config.maxRetries}) must be ${kinesisOptions.maxRetries}`);
+  } else {
+    t.notOk(context.kinesis, 'context.kinesis must not be configured');
   }
+
   // Check DynamoDB DocumentClient instance is also configured
-  if (expectedSettings.dynamoDBDocClientOptions) {
+  if (dynamoDBDocClientOptions) {
     // Check DynamoDB.DocumentClient is also configured
-    t.ok(context.dynamoDBDocClient, 'context.dynamoDBDocClient must be configured');
-    equal(t, context.dynamoDBDocClient.service.config.region, region, 'context.dynamoDBDocClient.config.region');
-    equal(t, context.dynamoDBDocClient.service.config.maxRetries, expectedSettings.dynamoDBDocClientOptions.maxRetries, 'context.dynamoDBDocClient.config.maxRetries');
+    t.ok(context.dynamoDBDocClient && typeof context.dynamoDBDocClient === 'object', 'context.dynamoDBDocClient must be configured');
+    t.equal(context.dynamoDBDocClient.service.config.region, region, `context.dynamoDBDocClient.service.config.region (${context.dynamoDBDocClient.service.config.region}) must be ${region}`);
+    t.equal(context.dynamoDBDocClient.service.config.maxRetries, dynamoDBDocClientOptions.maxRetries,
+      `context.dynamoDBDocClient.service.config.maxRetries (${context.dynamoDBDocClient.service.config.maxRetries}) must be ${dynamoDBDocClientOptions.maxRetries}`);
+  } else {
+    t.notOk(context.dynamoDBDocClient, 'context.dynamoDBDocClient must not be configured');
   }
+
+  if (event && awsContext) {
+    t.equal(context.region, region, `context.region must be ${region}`);
+    t.equal(context.stage, expectedStage, `context.stage must be ${expectedStage}`);
+    t.equal(context.awsContext, awsContext, 'context.awsContext must be given AWS context');
+  }
+}
+
+function checkConfigureStreamProcessingWithSettings(t, context, settings, stdSettings, stdOptions, event, awsContext, forceConfiguration, expectedSettings, expectedStage) {
+  const before = context.streamProcessing;
+  const mustChange = forceConfiguration || !isStreamProcessingConfigured(context);
+
+  const c = configureStreamProcessingWithSettings(context, settings, stdSettings, stdOptions, event, awsContext, forceConfiguration);
+
+  t.ok(c === context, `Context returned must be given context`);
+  checkSettings(t, context, before, mustChange, expectedSettings);
+  checkDependencies(t, context, stdSettings, stdOptions, event, awsContext, expectedStage);
+}
+
+function checkConfigureStreamProcessing(t, context, settings, options, stdSettings, stdOptions, event, awsContext, forceConfiguration, expectedSettings, expectedStage) {
+  const before = context.streamProcessing;
+  const mustChange = forceConfiguration || !isStreamProcessingConfigured(context);
+
+  const c = configureStreamProcessing(context, settings, options, stdSettings, stdOptions, event, awsContext, forceConfiguration);
+
+  t.ok(c === context, `Context returned must be given context`);
+  checkSettings(t, context, before, mustChange, expectedSettings);
+  checkDependencies(t, context, stdSettings, stdOptions, event, awsContext, expectedStage);
+}
+
+function setRegionStageAndDeleteCachedInstances(region, stage) {
+  // Set up region
+  process.env.AWS_REGION = region;
+  // Set up stage
+  process.env.STAGE = stage;
+  // Remove any cached entries before configuring
+  deleteCachedInstances();
 }
 
 function deleteCachedInstances() {
   const region = regions.getRegion();
   kinesisCache.deleteKinesis(region);
   dynamoDBDocClientCache.deleteDynamoDBDocClient(region);
-}
-
-function checkConfigureStreamProcessingWithSettings(t, context, settings, otherSettings, otherOptions, forceConfiguration, expectedSettings) {
-  const before = context.streamProcessing;
-  const mustChange = forceConfiguration || !isStreamProcessingConfigured(context);
-
-  const c = configureStreamProcessingWithSettings(context, settings, otherSettings, otherOptions, forceConfiguration);
-
-  t.ok(c === context, `Context returned must be given context`);
-  checkSettings(t, context, before, mustChange, expectedSettings);
-}
-
-function checkConfigureStreamProcessing(t, context, settings, options, otherSettings, otherOptions, forceConfiguration, expectedSettings) {
-  const before = context.streamProcessing;
-  const mustChange = forceConfiguration || !isStreamProcessingConfigured(context);
-
-  const c = configureStreamProcessing(context, settings, options, otherSettings, otherOptions, forceConfiguration);
-
-  t.ok(c === context, `Context returned must be given context`);
-  checkSettings(t, context, before, mustChange, expectedSettings);
 }
 
 // =====================================================================================================================
@@ -245,7 +305,7 @@ test('isStreamProcessingConfigured', t => {
   const context = {};
   t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, undefined, undefined, true);
 
   t.ok(isStreamProcessingConfigured(context), `Stream processing must be configured now`);
 
@@ -253,286 +313,652 @@ test('isStreamProcessingConfigured', t => {
 });
 
 // =====================================================================================================================
-// configureStreamProcessingWithSettings
+// configureStreamProcessingWithSettings without event & awsContext
 // =====================================================================================================================
 
-test('configureStreamProcessingWithSettings', t => {
-  // Set up region
-  regions.ONLY_FOR_TESTING.setRegionIfNotSet('us-west-1');
-  // Remove any cached entries before configuring
-  deleteCachedInstances();
-
-  function check(context, settings, otherSettings, otherOptions, forceConfiguration, expectedSettings) {
-    return checkConfigureStreamProcessingWithSettings(t, context, settings, otherSettings, otherOptions, forceConfiguration, expectedSettings);
+test('configureStreamProcessingWithSettings without event & awsContext', t => {
+  function check(context, settings, stdSettings, stdOptions, forceConfiguration, expectedSettings) {
+    return checkConfigureStreamProcessingWithSettings(t, context, settings, stdSettings, stdOptions, undefined, undefined,
+      forceConfiguration, expectedSettings, undefined);
   }
 
-  const context = {};
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
+    const context = {};
 
-  // Dummy extract message from record functions
-  const extractMessageFromRecord1 = (record, context) => record;
-  const extractMessageFromRecord2 = (record, context) => record;
+    t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
 
-  const loadTaskTrackingState1 = (messages, context) => messages;
-  const loadTaskTrackingState2 = (messages, context) => messages;
+    // Dummy extract message from record functions
+    const extractMessageFromRecord1 = (record, context) => record;
+    const extractMessageFromRecord2 = (record, context) => record;
 
-  const saveTaskTrackingState1 = (messages, context) => messages;
-  const saveTaskTrackingState2 = (messages, context) => messages;
+    const loadTaskTrackingState1 = (messages, context) => messages;
+    const loadTaskTrackingState2 = (messages, context) => messages;
 
-  const handleIncompleteMessages1 = (incompleteMessages, streamName, context) => incompleteMessages;
-  const handleIncompleteMessages2 = (incompleteMessages, streamName, context) => incompleteMessages;
+    const saveTaskTrackingState1 = (messages, context) => messages;
+    const saveTaskTrackingState2 = (messages, context) => messages;
 
-  const discardUnusableRecords1 = (unusableRecords, context) => unusableRecords;
-  const discardUnusableRecords2 = (unusableRecords, context) => unusableRecords;
+    const handleIncompleteMessages1 = (messages, incompleteMessages, context) => incompleteMessages;
+    const handleIncompleteMessages2 = (messages, incompleteMessages, context) => incompleteMessages;
 
-  const discardRejectedMessages1 = (rejectedMessages, context) => rejectedMessages;
-  const discardRejectedMessages2 = (rejectedMessages, context) => rejectedMessages;
+    const discardUnusableRecords1 = (unusableRecords, context) => unusableRecords;
+    const discardUnusableRecords2 = (unusableRecords, context) => unusableRecords;
 
-  // Configure for the first time
-  const settings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1', {}, {});
-  check(context, settings1, undefined, require('../dynamodb-options.json'), false, settings1);
+    const discardRejectedMessages1 = (rejectedMessages, context) => rejectedMessages;
+    const discardRejectedMessages2 = (rejectedMessages, context) => rejectedMessages;
 
-  // Don't force a different configuration
-  const settings2 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_NoOverride', 0.81, 77, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName2', 'DRQ2', 'DMQ2', {}, undefined);
-  check(context, settings2, undefined, require('../kinesis-options.json'), false, settings1);
+    // Configure for the first time
+    const settings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+    const expectedSettings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+    check(context, settings1, undefined, require('../default-dynamodb-options.json'), false, expectedSettings1);
 
-  // Force a new configuration
-  context.kinesis = undefined;
-  context.dynamoDBDocClient = undefined;
-  deleteCachedInstances();
-  const settings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3', {}, undefined);
-  check(context, settings3, undefined, require('../kinesis-options.json'), true, settings3);
-
-  t.end();
-});
-
-// =====================================================================================================================
-// configureStreamProcessing with settings
-// =====================================================================================================================
-
-test('configureStreamProcessing with settings', t => {
-  // Set up region
-  regions.ONLY_FOR_TESTING.setRegionIfNotSet('us-west-1');
-  // Remove any cached entries before configuring
-  deleteCachedInstances();
-
-  function check(context, settings, options, otherSettings, otherOptions, forceConfiguration, expectedSettings) {
-    return checkConfigureStreamProcessing(t, context, settings, options, otherSettings, otherOptions, forceConfiguration, expectedSettings);
-  }
-
-  const context = {};
-
-  t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
-
-  // Dummy extract message from record functions
-  const extractMessageFromRecord1 = (record, context) => record;
-  const extractMessageFromRecord2 = (record, context) => record;
-
-  const loadTaskTrackingState1 = (messages, context) => messages;
-  const loadTaskTrackingState2 = (messages, context) => messages;
-
-  const saveTaskTrackingState1 = (messages, context) => messages;
-  const saveTaskTrackingState2 = (messages, context) => messages;
-
-  const handleIncompleteMessages1 = (incompleteMessages, streamName, context) => incompleteMessages;
-  const handleIncompleteMessages2 = (incompleteMessages, streamName, context) => incompleteMessages;
-
-  const discardUnusableRecords1 = (unusableRecords, context) => unusableRecords;
-  const discardUnusableRecords2 = (unusableRecords, context) => unusableRecords;
-
-  const discardRejectedMessages1 = (rejectedMessages, context) => rejectedMessages;
-  const discardRejectedMessages2 = (rejectedMessages, context) => rejectedMessages;
-
-  // Configure for the first time
-  const settings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1', {}, {});
-  check(context, settings1, undefined, undefined, require('../dynamodb-options.json'), false, settings1);
-
-  // Don't force a different configuration
-  const settings2 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_NoOverride', 0.81, 77, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName2', 'DRQ2', 'DMQ2', {}, {});
-  check(context, settings2, undefined, undefined, require('../kinesis-options.json'), false, settings1);
-
-  // Force a new configuration
-  context.kinesis = undefined;
-  context.dynamoDBDocClient = undefined;
-  deleteCachedInstances();
-  const settings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3', {}, {});
-  check(context, settings3, undefined, undefined, require('../kinesis-options.json'), true, settings3);
-
-  t.end();
-});
-
-// =====================================================================================================================
-// configureStreamProcessing with options
-// =====================================================================================================================
-
-test('configureStreamProcessing with options', t => {
-  // Set up region
-  regions.ONLY_FOR_TESTING.setRegionIfNotSet('us-west-1');
-  const region = regions.getRegion();
-  // Remove any cached entries before configuring
-  deleteCachedInstances();
-
-  function check(context, settings, options, otherSettings, otherOptions, forceConfiguration, expectedSettings) {
-    return checkConfigureStreamProcessing(t, context, settings, options, otherSettings, otherOptions, forceConfiguration, expectedSettings);
-  }
-
-  const context = {};
-
-  t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
-
-  // Configure for the first time
-  const options1 = toOptions(DYNAMODB_STREAM_TYPE, 'myTasks', 0.75, 2, 'taskTrackingTableName1', 'DRQ1', 'DMQ1', {}, {});
-  const expectedSettings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks', 0.75, 2,
-    useStreamEventRecordAsMessage, loadTaskTrackingStateFromDynamoDB, saveTaskTrackingStateToDynamoDB,
-    replayAllMessagesIfIncomplete, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ,
-    'taskTrackingTableName1', 'DRQ1', 'DMQ1', options1.kinesisOptions, options1.dynamoDBDocClientOptions);
-  check(context, undefined, options1, undefined, require('../dynamodb-options.json'), false, expectedSettings1);
-
-  // Don't force a different configuration
-  const options2 = toOptions(KINESIS_STREAM_TYPE, 'myTasks_NoOverride', 0.81, 77, 'taskTrackingTableName2', 'DRQ2', 'DMQ2', {}, {});
-  //const expectedSettings2 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_NoOverride', 0.81, 77, extractJsonMessageFromKinesisRecord, skipLoadTaskTrackingState, skipSaveTaskTrackingState, resubmitIncompleteMessagesToKinesis, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ, 'taskTrackingTableName2', 'DRQ2', 'DMQ2', {}, {});
-  check(context, undefined, options2, undefined, require('../kinesis-options.json'), false, expectedSettings1);
-
-  // Force a new configuration
-  context.kinesis = undefined;
-  context.dynamoDBDocClient = undefined;
-  deleteCachedInstances();
-  const options3 = toOptions(KINESIS_STREAM_TYPE, 'myTasks_Override', 0.91, 7, 'taskTrackingTableName2', 'DRQ3', 'DMQ2', {}, {});
-  const expectedSettings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override', 0.91, 7,
-    extractJsonMessageFromKinesisRecord, skipLoadTaskTrackingState, skipSaveTaskTrackingState,
-    resubmitIncompleteMessagesToKinesis, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ,
-    'taskTrackingTableName2', 'DRQ3', 'DMQ2', options3.kinesisOptions, options3.dynamoDBDocClientOptions);
-  check(context, undefined, options3, undefined, require('../kinesis-options.json'), true, expectedSettings3);
-
-  t.end();
-});
-
-// =====================================================================================================================
-// configureDefaultKinesisStreamProcessing
-// =====================================================================================================================
-
-test('configureDefaultKinesisStreamProcessing', t => {
-  // Set up region
-  regions.ONLY_FOR_TESTING.setRegionIfNotSet('us-west-1');
-  // Remove any cached entries before configuring
-  deleteCachedInstances();
-
-  function checkConfigureDefaultKinesisStreamProcessing(context, options, otherSettings, otherOptions, forceConfiguration, expectedSettings) {
-    const before = context.streamProcessing;
-    const mustChange = forceConfiguration || !isStreamProcessingConfigured(context);
-
-    const c = configureDefaultKinesisStreamProcessing(context, options, otherSettings, otherOptions, forceConfiguration);
-
-    t.ok(c === context, `Context returned must be given context`);
-    checkSettings(t, context, before, mustChange, expectedSettings);
-  }
-
-  const context = {};
-
-  // Dummy extract message from record functions
-  const extractMessageFromRecord1 = (record, context) => record;
-  const loadTaskTrackingState1 = (messages, context) => messages;
-  const saveTaskTrackingState1 = (messages, context) => messages;
-  const handleIncompleteMessages1 = (messages, context) => messages;
-  const discardUnusableRecords1 = (records, context) => records;
-  const discardRejectedMessages1 = (rejectedMessages, messages, context) => messages;
-
-  t.notOk(isStreamProcessingConfigured(context), `Default stream processing must NOT be configured yet`);
-
-  // Configure defaults for the first time
-  const otherOptions = require('../kinesis-options.json');
-  const options = otherOptions.streamProcessingOptions;
-
-  const expectedSettings = toSettings(options.streamType, options.taskTrackingName, options.timeoutAtPercentageOfRemainingTime,
-    options.maxNumberOfAttempts, extractJsonMessageFromKinesisRecord, skipLoadTaskTrackingState, skipSaveTaskTrackingState,
-    resubmitIncompleteMessagesToKinesis, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ, undefined,
-    options.deadRecordQueueName, options.deadMessageQueueName, options.kinesisOptions, undefined);
-
-  checkConfigureDefaultKinesisStreamProcessing(context, options, undefined, undefined, false, expectedSettings);
-
-  // Force a totally different configuration to overwrite the default Kinesis configuration
-  context.kinesis = undefined;
-  context.dynamoDBDocClient = undefined;
-  deleteCachedInstances();
-  const dynamoDBSettings = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks_Override', 0.91, 7,
-    extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1,
-    'taskTrackingTableName', 'DRQ', 'DMQ', {}, {});
-  checkConfigureStreamProcessingWithSettings(t, context, dynamoDBSettings, undefined, require('../dynamodb-options.json'), true, dynamoDBSettings);
-
-  // Don't force the default configuration back again
-  checkConfigureDefaultKinesisStreamProcessing(context, options, undefined, otherOptions, false, dynamoDBSettings);
-
-  // Force the default configuration back again
-  context.kinesis = undefined;
-  context.dynamoDBDocClient = undefined;
-  deleteCachedInstances();
-  checkConfigureDefaultKinesisStreamProcessing(context, options, undefined, otherOptions, true, expectedSettings);
-
-  t.end();
-});
-
-// =====================================================================================================================
-// configureDefaultDynamoDBStreamProcessing
-// =====================================================================================================================
-
-test('configureDefaultDynamoDBStreamProcessing', t => {
-  // Set up region
-  regions.ONLY_FOR_TESTING.setRegionIfNotSet('us-west-1');
-    // Remove any cached entries before configuring
+    // Don't force a different configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
     deleteCachedInstances();
+    const settings2 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_NoOverride2', 0.81, 77, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName2', 'DRQ2', 'DMQ2');
+    check(context, settings2, undefined, require('../default-kinesis-options.json'), false, expectedSettings1);
 
-  function checkConfigureDefaultDynamoDBStreamProcessing(context, options, otherSettings, otherOptions, forceConfiguration, expectedSettings) {
+    // Force a new configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const settings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    const expectedSettings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    check(context, settings3, undefined, require('../default-kinesis-options.json'), true, expectedSettings3);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+  t.end();
+});
+
+// =====================================================================================================================
+// configureStreamProcessingWithSettings with event & awsContext
+// =====================================================================================================================
+
+test('configureStreamProcessingWithSettings with event & awsContext', t => {
+  function check(context, settings, stdSettings, stdOptions, event, awsContext, forceConfiguration, expectedSettings, expectedStage) {
+    return checkConfigureStreamProcessingWithSettings(t, context, settings, stdSettings, stdOptions, event, awsContext,
+      forceConfiguration, expectedSettings, expectedStage);
+  }
+
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
+    const expectedStage = 'dev99';
+
+    const context = {};
+
+    t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
+
+    // Dummy extract message from record functions
+    const extractMessageFromRecord1 = (record, context) => record;
+    const extractMessageFromRecord2 = (record, context) => record;
+
+    const loadTaskTrackingState1 = (messages, context) => messages;
+    const loadTaskTrackingState2 = (messages, context) => messages;
+
+    const saveTaskTrackingState1 = (messages, context) => messages;
+    const saveTaskTrackingState2 = (messages, context) => messages;
+
+    const handleIncompleteMessages1 = (messages, incompleteMessages, context) => incompleteMessages;
+    const handleIncompleteMessages2 = (messages, incompleteMessages, context) => incompleteMessages;
+
+    const discardUnusableRecords1 = (unusableRecords, context) => unusableRecords;
+    const discardUnusableRecords2 = (unusableRecords, context) => unusableRecords;
+
+    const discardRejectedMessages1 = (rejectedMessages, context) => rejectedMessages;
+    const discardRejectedMessages2 = (rejectedMessages, context) => rejectedMessages;
+
+    // Generate a sample AWS event
+    const event = sampleAwsEvent('TestStream_DEV2', 'partitionKey', '', false);
+
+    // Generate a sample AWS context
+    const awsContext = sampleAwsContext('1.0.1', 'dev1');
+
+    // Configure for the first time
+    const settings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+    const expectedSettings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+    check(context, settings1, undefined, require('../default-dynamodb-options.json'), event, awsContext, false, expectedSettings1, expectedStage);
+
+    // Don't force a different configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const settings2 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_NoOverride2', 0.81, 77, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName2', 'DRQ2', 'DMQ2');
+    check(context, settings2, undefined, require('../default-kinesis-options.json'), event, awsContext, false, expectedSettings1, expectedStage);
+
+    // Force a new configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const settings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    const expectedSettings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    check(context, settings3, undefined, require('../default-kinesis-options.json'), event, awsContext, true, expectedSettings3, expectedStage);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+  t.end();
+});
+
+// =====================================================================================================================
+// configureStreamProcessing with options only
+// =====================================================================================================================
+
+test('configureStreamProcessing with options only', t => {
+  function check(context, settings, options, stdSettings, stdOptions, event, awsContext, forceConfiguration, expectedSettings, expectedStage) {
+    return checkConfigureStreamProcessing(t, context, settings, options, stdSettings, stdOptions, event, awsContext, forceConfiguration, expectedSettings, expectedStage);
+  }
+
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
+
+    const context = {};
+
+    t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
+
+    // Configure for the first time
+    const options1 = toOptions(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+    const expectedSettings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, useStreamEventRecordAsMessage, loadTaskTrackingStateFromDynamoDB, saveTaskTrackingStateToDynamoDB, replayAllMessagesIfIncomplete, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+    check(context, undefined, options1, undefined, require('../default-dynamodb-options.json'), undefined, undefined, false, expectedSettings1, undefined);
+
+    // Don't force a different configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const options2 = toOptions(KINESIS_STREAM_TYPE, 'myTasks_NoOverride2', 0.81, 77, 'taskTrackingTableName2', 'DRQ2', 'DMQ2');
+    const stdOptions = require('../default-kinesis-options.json');
+    check(context, undefined, options2, undefined, stdOptions, undefined, undefined, false, expectedSettings1, undefined);
+
+    // Force a new configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const options3 = toOptions(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    const expectedSettings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, extractJsonMessageFromKinesisRecord, skipLoadTaskTrackingState, skipSaveTaskTrackingState, resubmitIncompleteMessagesToKinesis, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    check(context, undefined, options3, undefined, stdOptions, undefined, undefined, true, expectedSettings3, undefined);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+  t.end();
+});
+
+// =====================================================================================================================
+// configureStreamProcessing with settings only
+// =====================================================================================================================
+
+test('configureStreamProcessing with settings only', t => {
+
+  function check(context, settings, options, stdSettings, stdOptions, event, awsContext, forceConfiguration, expectedSettings, expectedStage) {
+    return checkConfigureStreamProcessing(t, context, settings, options, stdSettings, stdOptions, event, awsContext,
+      forceConfiguration, expectedSettings, expectedStage);
+  }
+
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
+
+    const context = {};
+
+    t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
+
+    // Dummy extract message from record functions
+    const extractMessageFromRecord1 = (record, context) => record;
+    const extractMessageFromRecord2 = (record, context) => record;
+
+    const loadTaskTrackingState1 = (messages, context) => messages;
+    const loadTaskTrackingState2 = (messages, context) => messages;
+
+    const saveTaskTrackingState1 = (messages, context) => messages;
+    const saveTaskTrackingState2 = (messages, context) => messages;
+
+    const handleIncompleteMessages1 = (incompleteMessages, streamName, context) => incompleteMessages;
+    const handleIncompleteMessages2 = (incompleteMessages, streamName, context) => incompleteMessages;
+
+    const discardUnusableRecords1 = (unusableRecords, context) => unusableRecords;
+    const discardUnusableRecords2 = (unusableRecords, context) => unusableRecords;
+
+    const discardRejectedMessages1 = (rejectedMessages, context) => rejectedMessages;
+    const discardRejectedMessages2 = (rejectedMessages, context) => rejectedMessages;
+
+    // Configure for the first time
+    const settings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+    const expectedSettings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+    check(context, settings1, undefined, undefined, require('../default-dynamodb-options.json'), undefined, undefined, false, expectedSettings1, undefined);
+
+    // Don't force a different configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const settings2 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_NoOverride2', 0.81, 77, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName2', 'DRQ2', 'DMQ2');
+    check(context, settings2, undefined, undefined, require('../default-kinesis-options.json'), undefined, undefined, false, expectedSettings1, undefined);
+
+    // Force a new configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const settings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    const expectedSettings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    check(context, settings3, undefined, undefined, require('../default-kinesis-options.json'), undefined, undefined, true, expectedSettings3, undefined);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+  t.end();
+});
+
+// =====================================================================================================================
+// configureStreamProcessing with settings and options
+// =====================================================================================================================
+
+test('configureStreamProcessing with settings and options', t => {
+  function check(context, settings, options, stdSettings, stdOptions, event, awsContext, forceConfiguration, expectedSettings, expectedStage) {
+    return checkConfigureStreamProcessing(t, context, settings, options, stdSettings, stdOptions, event, awsContext,
+      forceConfiguration, expectedSettings, expectedStage);
+  }
+
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
+
+    const context = {};
+
+    t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
+
+    // Dummy extract message from record functions
+    const extractMessageFromRecord1 = (record, context) => record;
+    const extractMessageFromRecord2 = (record, context) => record;
+
+    const loadTaskTrackingState1 = (messages, context) => messages;
+    const loadTaskTrackingState2 = (messages, context) => messages;
+
+    const saveTaskTrackingState1 = (messages, context) => messages;
+    const saveTaskTrackingState2 = (messages, context) => messages;
+
+    const handleIncompleteMessages1 = (incompleteMessages, streamName, context) => incompleteMessages;
+    const handleIncompleteMessages2 = (incompleteMessages, streamName, context) => incompleteMessages;
+
+    const discardUnusableRecords1 = (unusableRecords, context) => unusableRecords;
+    const discardUnusableRecords2 = (unusableRecords, context) => unusableRecords;
+
+    const discardRejectedMessages1 = (rejectedMessages, context) => rejectedMessages;
+    const discardRejectedMessages2 = (rejectedMessages, context) => rejectedMessages;
+
+    // Configure for the first time
+    const settings1 = toSettingsWithFunctionsOnly(extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1);
+    const options1 = toOptions(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+    const expectedSettings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+
+    check(context, settings1, options1, undefined, require('../default-dynamodb-options.json'), undefined, undefined, false, expectedSettings1, undefined);
+
+    // Don't force a different configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const settings2 = toSettingsWithFunctionsOnly(extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2);
+    const options2 = toOptions(KINESIS_STREAM_TYPE, 'myTasks_NoOverride2', 0.81, 77, 'taskTrackingTableName2', 'DRQ2', 'DMQ2');
+    check(context, settings2, options2, undefined, require('../default-kinesis-options.json'), undefined, undefined, false, expectedSettings1, undefined);
+
+    // Force a new configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const settings3 = toSettingsWithFunctionsOnly(extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2);
+    const options3 = toOptions(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    const expectedSettings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    check(context, settings3, options3, undefined, require('../default-kinesis-options.json'), undefined, undefined, true, expectedSettings3, undefined);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+  t.end();
+});
+
+// =====================================================================================================================
+// configureStreamProcessing with settings, options, event and awsContext
+// =====================================================================================================================
+
+test('configureStreamProcessing with settings, options, event and awsContext', t => {
+  function check(context, settings, options, stdSettings, stdOptions, event, awsContext, forceConfiguration, expectedSettings, expectedStage) {
+    return checkConfigureStreamProcessing(t, context, settings, options, stdSettings, stdOptions, event, awsContext,
+      forceConfiguration, expectedSettings, expectedStage);
+  }
+
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
+    const expectedStage = 'dev99';
+
+    const context = {};
+
+    t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
+
+    // Dummy extract message from record functions
+    const extractMessageFromRecord1 = (record, context) => record;
+    const extractMessageFromRecord2 = (record, context) => record;
+
+    const loadTaskTrackingState1 = (messages, context) => messages;
+    const loadTaskTrackingState2 = (messages, context) => messages;
+
+    const saveTaskTrackingState1 = (messages, context) => messages;
+    const saveTaskTrackingState2 = (messages, context) => messages;
+
+    const handleIncompleteMessages1 = (incompleteMessages, streamName, context) => incompleteMessages;
+    const handleIncompleteMessages2 = (incompleteMessages, streamName, context) => incompleteMessages;
+
+    const discardUnusableRecords1 = (unusableRecords, context) => unusableRecords;
+    const discardUnusableRecords2 = (unusableRecords, context) => unusableRecords;
+
+    const discardRejectedMessages1 = (rejectedMessages, context) => rejectedMessages;
+    const discardRejectedMessages2 = (rejectedMessages, context) => rejectedMessages;
+
+    // Generate a sample AWS event
+    const event = sampleAwsEvent('TestStream_DEV2', 'partitionKey', '', false);
+
+    // Generate a sample AWS context
+    const awsContext = sampleAwsContext('1.0.1', 'dev1');
+
+    // Configure for the first time
+    const settings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+    const options1 = toOptions(DYNAMODB_STREAM_TYPE, 'myTasks1B', 0.74, 1, 'taskTrackingTableName1B', 'DRQ1B', 'DMQ1B');
+    const expectedSettings1 = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks1', 0.75, 2, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName1', 'DRQ1', 'DMQ1');
+
+    check(context, settings1, options1, undefined, require('../default-dynamodb-options.json'), event, awsContext, false, expectedSettings1, expectedStage);
+
+    // Don't force a different configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const settings2 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_NoOverride2', 0.81, 77, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName2', 'DRQ2', 'DMQ2');
+    const options2 = toOptions(KINESIS_STREAM_TYPE, 'myTasks_NoOverride2B', 0.80, 76, 'taskTrackingTableName2B', 'DRQ2B', 'DMQ2B');
+    check(context, settings2, options2, undefined, require('../default-kinesis-options.json'), event, awsContext, false, expectedSettings1, expectedStage);
+
+    // Force a new configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const settings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    const options3 = toOptions(KINESIS_STREAM_TYPE, 'myTasks_Override3B', 0.90, 6, 'taskTrackingTableName3B', 'DRQ3B', 'DMQ3B');
+    const expectedSettings3 = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override3', 0.91, 7, extractMessageFromRecord2, loadTaskTrackingState2, saveTaskTrackingState2, handleIncompleteMessages2, discardUnusableRecords2, discardRejectedMessages2, 'taskTrackingTableName3', 'DRQ3', 'DMQ3');
+    check(context, settings3, options3, undefined, require('../default-kinesis-options.json'), event, awsContext, true, expectedSettings3, expectedStage);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+  t.end();
+});
+
+// =====================================================================================================================
+// configureDefaultKinesisStreamProcessing without event & awsContext
+// =====================================================================================================================
+
+test('configureDefaultKinesisStreamProcessing without event & awsContext', t => {
+  function checkConfigureDefaultKinesisStreamProcessing(context, options, stdSettings, stdOptions, forceConfiguration, expectedSettings) {
     const before = context.streamProcessing;
     const mustChange = forceConfiguration || !isStreamProcessingConfigured(context);
 
-    const c = configureDefaultDynamoDBStreamProcessing(context, options, otherSettings, otherOptions, forceConfiguration);
+    const c = configureDefaultKinesisStreamProcessing(context, options, stdSettings, stdOptions, undefined, undefined, forceConfiguration);
 
     t.ok(c === context, `Context returned must be given context`);
     checkSettings(t, context, before, mustChange, expectedSettings);
+    checkDependencies(t, context, stdSettings, stdOptions, undefined, undefined, undefined);
   }
 
-  const context = {};
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  // Dummy extract message from record functions
-  const extractMessageFromRecord1 = (record, context) => record;
-  const loadTaskTrackingState1 = (messages, context) => messages;
-  const saveTaskTrackingState1 = (messages, context) => messages;
-  const handleIncompleteMessages1 = (messages, context) => messages;
-  const discardUnusableRecords1 = (records, context) => records;
-  const discardRejectedMessages1 = (rejectedMessages, messages, context) => messages;
+    const context = {};
 
-  t.notOk(isStreamProcessingConfigured(context), `Default stream processing must NOT be configured yet`);
+    // Dummy extract message from record functions
+    const extractMessageFromRecord1 = (record, context) => record;
+    const loadTaskTrackingState1 = (messages, context) => messages;
+    const saveTaskTrackingState1 = (messages, context) => messages;
+    const handleIncompleteMessages1 = (messages, context) => messages;
+    const discardUnusableRecords1 = (records, context) => records;
+    const discardRejectedMessages1 = (rejectedMessages, messages, context) => messages;
 
-  // Configure defaults for the first time
-  const otherOptions = require('../dynamodb-options.json');
-  const options = otherOptions.streamProcessingOptions;
+    t.notOk(isStreamProcessingConfigured(context), `Default stream processing must NOT be configured yet`);
 
-  const expectedSettings = toSettings(options.streamType, options.taskTrackingName, options.timeoutAtPercentageOfRemainingTime,
-    options.maxNumberOfAttempts, useStreamEventRecordAsMessage, loadTaskTrackingStateFromDynamoDB, saveTaskTrackingStateToDynamoDB,
-    replayAllMessagesIfIncomplete, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ, options.taskTrackingTableName,
-    options.deadRecordQueueName, options.deadMessageQueueName, options.kinesisOptions, options.dynamoDBDocClientOptions);
+    // Configure defaults for the first time
+    const stdOptions = require('../default-kinesis-options.json');
+    const options = stdOptions.streamProcessingOptions;
 
-  checkConfigureDefaultDynamoDBStreamProcessing(context, options, undefined, undefined, false, expectedSettings);
+    const expectedSettings = toSettings(options.streamType, options.taskTrackingName, options.timeoutAtPercentageOfRemainingTime, options.maxNumberOfAttempts, extractJsonMessageFromKinesisRecord, skipLoadTaskTrackingState, skipSaveTaskTrackingState, resubmitIncompleteMessagesToKinesis, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ, undefined, options.deadRecordQueueName, options.deadMessageQueueName);
 
-  // Force a totally different configuration to overwrite the default DynamoDB configuration
-  context.kinesis = undefined;
-  context.dynamoDBDocClient = undefined;
-  deleteCachedInstances();
-  const kinesisSettings = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override', 0.91, 7,
-    extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1,
-    'taskTrackingTableName', 'DRQ', 'DMQ', {}, undefined);
-  checkConfigureStreamProcessingWithSettings(t, context, kinesisSettings, undefined, require('../kinesis-options.json'), true, kinesisSettings);
+    checkConfigureDefaultKinesisStreamProcessing(context, options, undefined, stdOptions, false, expectedSettings);
 
-  // Don't force the default configuration back again
-  checkConfigureDefaultDynamoDBStreamProcessing(context, options, undefined, otherOptions, false, kinesisSettings);
+    // Force a totally different configuration to overwrite the default Kinesis configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const dynamoDBSettings = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks_Override', 0.91, 7, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName', 'DRQ', 'DMQ');
+    checkConfigureStreamProcessingWithSettings(t, context, dynamoDBSettings, undefined, require('../default-dynamodb-options.json'), undefined, undefined, true, dynamoDBSettings, undefined);
 
-  // Force the default configuration back again
-  context.kinesis = undefined;
-  context.dynamoDBDocClient = undefined;
-  deleteCachedInstances();
-  checkConfigureDefaultDynamoDBStreamProcessing(context, options, undefined, otherOptions, true, expectedSettings);
+    // Don't force the default configuration back again
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    checkConfigureDefaultKinesisStreamProcessing(context, options, undefined, stdOptions, false, dynamoDBSettings);
 
+    // Force the default configuration back again
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    checkConfigureDefaultKinesisStreamProcessing(context, options, undefined, stdOptions, true, expectedSettings);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+  t.end();
+});
+
+// =====================================================================================================================
+// configureDefaultKinesisStreamProcessing with event & awsContext
+// =====================================================================================================================
+
+test('configureDefaultKinesisStreamProcessing with event & awsContext', t => {
+  function checkConfigureDefaultKinesisStreamProcessing(context, options, stdSettings, stdOptions, event, awsContext, forceConfiguration, expectedSettings, expectedStage) {
+    const before = context.streamProcessing;
+    const mustChange = forceConfiguration || !isStreamProcessingConfigured(context);
+
+    const c = configureDefaultKinesisStreamProcessing(context, options, stdSettings, stdOptions, event, awsContext, forceConfiguration);
+
+    t.ok(c === context, `Context returned must be given context`);
+    checkSettings(t, context, before, mustChange, expectedSettings);
+    checkDependencies(t, context, stdSettings, stdOptions, event, awsContext, expectedStage);
+  }
+
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
+    const expectedStage = 'dev99';
+
+    const context = {};
+
+    // Dummy extract message from record functions
+    const extractMessageFromRecord1 = (record, context) => record;
+    const loadTaskTrackingState1 = (messages, context) => messages;
+    const saveTaskTrackingState1 = (messages, context) => messages;
+    const handleIncompleteMessages1 = (messages, context) => messages;
+    const discardUnusableRecords1 = (records, context) => records;
+    const discardRejectedMessages1 = (rejectedMessages, messages, context) => messages;
+
+    t.notOk(isStreamProcessingConfigured(context), `Default stream processing must NOT be configured yet`);
+
+    // Generate a sample AWS event
+    const event = sampleAwsEvent('TestStream_DEV2', 'partitionKey', '', false);
+
+    // Generate a sample AWS context
+    const awsContext = sampleAwsContext('1.0.1', 'dev1');
+
+    // Configure defaults for the first time
+    const stdOptions = require('../default-kinesis-options.json');
+    const options = stdOptions.streamProcessingOptions;
+
+    const expectedSettings = toSettings(options.streamType, options.taskTrackingName, options.timeoutAtPercentageOfRemainingTime, options.maxNumberOfAttempts, extractJsonMessageFromKinesisRecord, skipLoadTaskTrackingState, skipSaveTaskTrackingState, resubmitIncompleteMessagesToKinesis, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ, undefined, options.deadRecordQueueName, options.deadMessageQueueName);
+
+    checkConfigureDefaultKinesisStreamProcessing(context, options, undefined, stdOptions, event, awsContext, false, expectedSettings, expectedStage);
+
+    // Force a totally different configuration to overwrite the default Kinesis configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const dynamoDBSettings = toSettings(DYNAMODB_STREAM_TYPE, 'myTasks_Override', 0.91, 7, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName', 'DRQ', 'DMQ');
+    checkConfigureStreamProcessingWithSettings(t, context, dynamoDBSettings, undefined, require('../default-dynamodb-options.json'), event, awsContext, true, dynamoDBSettings, expectedStage);
+
+    // Don't force the default configuration back again
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    checkConfigureDefaultKinesisStreamProcessing(context, options, undefined, stdOptions, event, awsContext, false, dynamoDBSettings, expectedStage);
+
+    // Force the default configuration back again
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    checkConfigureDefaultKinesisStreamProcessing(context, options, undefined, stdOptions, event, awsContext, true, expectedSettings, expectedStage);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+  t.end();
+});
+
+// =====================================================================================================================
+// configureDefaultDynamoDBStreamProcessing without event & awsContext
+// =====================================================================================================================
+
+test('configureDefaultDynamoDBStreamProcessing without event & awsContext', t => {
+  function checkConfigureDefaultDynamoDBStreamProcessing(context, options, stdSettings, stdOptions, forceConfiguration, expectedSettings) {
+    const before = context.streamProcessing;
+    const mustChange = forceConfiguration || !isStreamProcessingConfigured(context);
+
+    const c = configureDefaultDynamoDBStreamProcessing(context, options, stdSettings, stdOptions, undefined, undefined, forceConfiguration);
+
+    t.ok(c === context, `Context returned must be given context`);
+    checkSettings(t, context, before, mustChange, expectedSettings);
+    checkDependencies(t, context, stdSettings, stdOptions, undefined, undefined, undefined);
+  }
+
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
+
+    const context = {};
+
+    // Dummy extract message from record functions
+    const extractMessageFromRecord1 = (record, context) => record;
+    const loadTaskTrackingState1 = (messages, context) => messages;
+    const saveTaskTrackingState1 = (messages, context) => messages;
+    const handleIncompleteMessages1 = (messages, context) => messages;
+    const discardUnusableRecords1 = (records, context) => records;
+    const discardRejectedMessages1 = (rejectedMessages, messages, context) => messages;
+
+    t.notOk(isStreamProcessingConfigured(context), `Default stream processing must NOT be configured yet`);
+
+    // Configure defaults for the first time
+    const stdOptions = require('../default-dynamodb-options.json');
+    const options = stdOptions.streamProcessingOptions;
+
+    const expectedSettings = toSettings(options.streamType, options.taskTrackingName, options.timeoutAtPercentageOfRemainingTime, options.maxNumberOfAttempts, useStreamEventRecordAsMessage, loadTaskTrackingStateFromDynamoDB, saveTaskTrackingStateToDynamoDB, replayAllMessagesIfIncomplete, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ, options.taskTrackingTableName, options.deadRecordQueueName, options.deadMessageQueueName);
+
+    checkConfigureDefaultDynamoDBStreamProcessing(context, options, undefined, stdOptions, false, expectedSettings);
+
+    // Force a totally different configuration to overwrite the default DynamoDB configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const kinesisSettings = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override', 0.91, 7, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName', 'DRQ', 'DMQ');
+    checkConfigureStreamProcessingWithSettings(t, context, kinesisSettings, undefined, require('../default-kinesis-options.json'), undefined, undefined, true, kinesisSettings, undefined);
+
+    // Don't force the default configuration back again
+    checkConfigureDefaultDynamoDBStreamProcessing(context, options, undefined, stdOptions, false, kinesisSettings);
+
+    // Force the default configuration back again
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    checkConfigureDefaultDynamoDBStreamProcessing(context, options, undefined, stdOptions, true, expectedSettings);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+  t.end();
+});
+
+// =====================================================================================================================
+// configureDefaultDynamoDBStreamProcessing with event & awsContext
+// =====================================================================================================================
+
+test('configureDefaultDynamoDBStreamProcessing with event & awsContext', t => {
+  function checkConfigureDefaultDynamoDBStreamProcessing(context, options, stdSettings, stdOptions, event, awsContext, forceConfiguration, expectedSettings, expectedStage) {
+    const before = context.streamProcessing;
+    const mustChange = forceConfiguration || !isStreamProcessingConfigured(context);
+
+    const c = configureDefaultDynamoDBStreamProcessing(context, options, stdSettings, stdOptions, event, awsContext, forceConfiguration);
+
+    t.ok(c === context, `Context returned must be given context`);
+    checkSettings(t, context, before, mustChange, expectedSettings);
+    checkDependencies(t, context, stdSettings, stdOptions, event, awsContext, expectedStage);
+  }
+
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
+    const expectedStage = 'dev99';
+
+    const context = {};
+
+    // Dummy extract message from record functions
+    const extractMessageFromRecord1 = (record, context) => record;
+    const loadTaskTrackingState1 = (messages, context) => messages;
+    const saveTaskTrackingState1 = (messages, context) => messages;
+    const handleIncompleteMessages1 = (messages, context) => messages;
+    const discardUnusableRecords1 = (records, context) => records;
+    const discardRejectedMessages1 = (rejectedMessages, messages, context) => messages;
+
+    t.notOk(isStreamProcessingConfigured(context), `Default stream processing must NOT be configured yet`);
+
+    // Generate a sample AWS event
+    const event = sampleAwsEvent('TestStream_DEV2', 'partitionKey', '', false);
+
+    // Generate a sample AWS context
+    const awsContext = sampleAwsContext('1.0.1', 'dev1');
+
+    // Configure defaults for the first time
+    const stdOptions = require('../default-dynamodb-options.json');
+    const options = stdOptions.streamProcessingOptions;
+
+    const expectedSettings = toSettings(options.streamType, options.taskTrackingName, options.timeoutAtPercentageOfRemainingTime, options.maxNumberOfAttempts, useStreamEventRecordAsMessage, loadTaskTrackingStateFromDynamoDB, saveTaskTrackingStateToDynamoDB, replayAllMessagesIfIncomplete, discardUnusableRecordsToDRQ, discardRejectedMessagesToDMQ, options.taskTrackingTableName, options.deadRecordQueueName, options.deadMessageQueueName);
+
+    checkConfigureDefaultDynamoDBStreamProcessing(context, options, undefined, stdOptions, event, awsContext, false, expectedSettings, expectedStage);
+
+    // Force a totally different configuration to overwrite the default DynamoDB configuration
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    const kinesisSettings = toSettings(KINESIS_STREAM_TYPE, 'myTasks_Override', 0.91, 7, extractMessageFromRecord1, loadTaskTrackingState1, saveTaskTrackingState1, handleIncompleteMessages1, discardUnusableRecords1, discardRejectedMessages1, 'taskTrackingTableName', 'DRQ', 'DMQ');
+    checkConfigureStreamProcessingWithSettings(t, context, kinesisSettings, undefined, require('../default-kinesis-options.json'), event, awsContext, true, kinesisSettings, expectedStage);
+
+    // Don't force the default configuration back again
+    checkConfigureDefaultDynamoDBStreamProcessing(context, options, undefined, stdOptions, event, awsContext, false, kinesisSettings, expectedStage);
+
+    // Force the default configuration back again
+    context.kinesis = undefined;
+    context.dynamoDBDocClient = undefined;
+    deleteCachedInstances();
+    checkConfigureDefaultDynamoDBStreamProcessing(context, options, undefined, stdOptions, event, awsContext, true, expectedSettings, expectedStage);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
   t.end();
 });
 
@@ -541,32 +967,39 @@ test('configureDefaultDynamoDBStreamProcessing', t => {
 // =====================================================================================================================
 
 test('getStreamProcessingSetting and getStreamProcessingFunction', t => {
-  const context = {};
-  const options = require('../kinesis-options.json');
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  // Configure default stream processing settings
-  configureDefaultKinesisStreamProcessing(context);
+    const context = {};
+    const options = require('../default-kinesis-options.json');
 
-  const defaultSettings = getDefaultKinesisStreamProcessingSettings(options.streamProcessingOptions);
+    // Configure default stream processing settings
+    configureDefaultKinesisStreamProcessing(context);
 
-  equal(t, getStreamProcessingSetting(context, STREAM_TYPE_SETTING), defaultSettings.streamType, 'streamType setting');
-  equal(t, getStreamProcessingSetting(context, TASK_TRACKING_NAME_SETTING), defaultSettings.taskTrackingName, 'taskTrackingName setting');
-  equal(t, getStreamProcessingSetting(context, TIMEOUT_AT_PERCENTAGE_OF_REMAINING_TIME_SETTING), defaultSettings.timeoutAtPercentageOfRemainingTime, 'timeoutAtPercentageOfRemainingTime setting');
-  equal(t, getStreamProcessingSetting(context, MAX_NUMBER_OF_ATTEMPTS_SETTING), defaultSettings.maxNumberOfAttempts, 'maxNumberOfAttempts setting');
+    const defaultSettings = getDefaultKinesisStreamProcessingSettings(options.streamProcessingOptions);
 
-  equal(t, getStreamProcessingFunction(context, EXTRACT_MESSAGE_FROM_RECORD_SETTING), extractJsonMessageFromKinesisRecord, 'extractMessageFromRecord function');
-  equal(t, getStreamProcessingFunction(context, DISCARD_UNUSABLE_RECORDS_SETTING), discardUnusableRecordsToDRQ, 'discardUnusableRecords function');
-  equal(t, getStreamProcessingFunction(context, DISCARD_REJECTED_MESSAGES_SETTING), discardRejectedMessagesToDMQ, 'discardRejectedMessages function');
-  equal(t, getStreamProcessingFunction(context, HANDLE_INCOMPLETE_MESSAGES_SETTING), resubmitIncompleteMessagesToKinesis, 'handleIncompleteMessages function');
+    t.equal(getStreamProcessingSetting(context, STREAM_TYPE_SETTING), defaultSettings.streamType, `streamType setting must be ${defaultSettings.streamType}`);
+    t.equal(getStreamProcessingSetting(context, TASK_TRACKING_NAME_SETTING), defaultSettings.taskTrackingName, `taskTrackingName setting must be ${defaultSettings.taskTrackingName}`);
+    t.equal(getStreamProcessingSetting(context, TIMEOUT_AT_PERCENTAGE_OF_REMAINING_TIME_SETTING), defaultSettings.timeoutAtPercentageOfRemainingTime, `timeoutAtPercentageOfRemainingTime setting must be ${defaultSettings.timeoutAtPercentageOfRemainingTime}`);
+    t.equal(getStreamProcessingSetting(context, MAX_NUMBER_OF_ATTEMPTS_SETTING), defaultSettings.maxNumberOfAttempts, `maxNumberOfAttempts setting must be ${defaultSettings.maxNumberOfAttempts}`);
 
-  equal(t, getStreamProcessingSetting(context, DEAD_RECORD_QUEUE_NAME_SETTING), defaultSettings.deadRecordQueueName, 'deadRecordQueueName setting');
-  equal(t, getStreamProcessingSetting(context, DEAD_MESSAGE_QUEUE_NAME_SETTING), defaultSettings.deadMessageQueueName, 'deadMessageQueueName setting');
+    t.equal(getStreamProcessingFunction(context, EXTRACT_MESSAGE_FROM_RECORD_SETTING), extractJsonMessageFromKinesisRecord, `extractMessageFromRecord function must be ${stringify(extractJsonMessageFromKinesisRecord)}`);
+    t.equal(getStreamProcessingFunction(context, DISCARD_UNUSABLE_RECORDS_SETTING), discardUnusableRecordsToDRQ, `discardUnusableRecords function must be ${stringify(discardUnusableRecordsToDRQ)}`);
+    t.equal(getStreamProcessingFunction(context, DISCARD_REJECTED_MESSAGES_SETTING), discardRejectedMessagesToDMQ, `discardRejectedMessages function must be ${stringify(discardRejectedMessagesToDMQ)}`);
+    t.equal(getStreamProcessingFunction(context, HANDLE_INCOMPLETE_MESSAGES_SETTING), resubmitIncompleteMessagesToKinesis, `handleIncompleteMessages function must be ${stringify(resubmitIncompleteMessagesToKinesis)}`);
 
-  equal(t, getExtractMessageFromRecordFunction(context), extractJsonMessageFromKinesisRecord, 'extractMessageFromRecord function');
-  equal(t, getDiscardUnusableRecordsFunction(context), discardUnusableRecordsToDRQ, 'discardUnusableRecords function');
-  equal(t, getDiscardRejectedMessagesFunction(context), discardRejectedMessagesToDMQ, 'discardRejectedMessages function');
-  equal(t, getHandleIncompleteMessagesFunction(context), resubmitIncompleteMessagesToKinesis, 'handleIncompleteMessages function');
+    t.equal(getStreamProcessingSetting(context, DEAD_RECORD_QUEUE_NAME_SETTING), defaultSettings.deadRecordQueueName, `deadRecordQueueName setting must be ${defaultSettings.deadRecordQueueName}`);
+    t.equal(getStreamProcessingSetting(context, DEAD_MESSAGE_QUEUE_NAME_SETTING), defaultSettings.deadMessageQueueName, `deadMessageQueueName setting must be ${defaultSettings.deadMessageQueueName}`);
 
+    t.equal(getExtractMessageFromRecordFunction(context), extractJsonMessageFromKinesisRecord, `extractMessageFromRecord function must be ${stringify(extractJsonMessageFromKinesisRecord)}`);
+    t.equal(getDiscardUnusableRecordsFunction(context), discardUnusableRecordsToDRQ, `discardUnusableRecords function must be ${stringify(discardUnusableRecordsToDRQ)}`);
+    t.equal(getDiscardRejectedMessagesFunction(context), discardRejectedMessagesToDMQ, `discardRejectedMessages function must be ${stringify(discardRejectedMessagesToDMQ)}`);
+    t.equal(getHandleIncompleteMessagesFunction(context), resubmitIncompleteMessagesToKinesis, `handleIncompleteMessages function must be ${stringify(resubmitIncompleteMessagesToKinesis)}`);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
   t.end();
 });
 
@@ -575,24 +1008,31 @@ test('getStreamProcessingSetting and getStreamProcessingFunction', t => {
 // =====================================================================================================================
 
 test('extractJsonMessageFromKinesisRecord', t => {
-  const context = {};
-  logging.configureDefaultLogging(context);
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-  const msg = sampleMessage();
+    const context = {};
+    logging.configureDefaultLogging(context);
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, undefined, undefined, true);
 
-  // Parse the non-JSON message and expect an error
-  t.throws(() => extractJsonMessageFromKinesisRecord(record, context), SyntaxError, `parsing a non-JSON message must throw an error`);
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const msg = sampleMessage();
 
-  record.kinesis.data = base64.toBase64(msg);
+    // Parse the non-JSON message and expect an error
+    t.throws(() => extractJsonMessageFromKinesisRecord(record, context), SyntaxError, `parsing a non-JSON message must throw an error`);
 
-  const message = extractJsonMessageFromKinesisRecord(record, context);
+    record.kinesis.data = base64.toBase64(msg);
 
-  t.ok(message, 'JSON message must be extracted');
-  t.deepEqual(message, msg, 'JSON message must match original');
+    const message = extractJsonMessageFromKinesisRecord(record, context);
 
+    t.ok(message, 'JSON message must be extracted');
+    t.deepEqual(message, msg, 'JSON message must match original');
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
   t.end();
 });
 
@@ -601,29 +1041,35 @@ test('extractJsonMessageFromKinesisRecord', t => {
 // =====================================================================================================================
 
 test('useStreamEventRecordAsMessage', t => {
-  const context = {};
-  configureDefaultDynamoDBStreamProcessing(context, undefined, undefined, require('../dynamodb-options.json'), true);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const record0 = {};
+    const context = {};
+    configureDefaultDynamoDBStreamProcessing(context, undefined, undefined, require('../default-dynamodb-options.json'), undefined, undefined, true);
 
-  // Use an undefined record and expect an error
-  t.throws(() => useStreamEventRecordAsMessage(undefined, context), Error, `using an undefined record must throw an error`);
-  t.throws(() => useStreamEventRecordAsMessage(null, context), Error, `using an undefined record must throw an error`);
+    const record0 = {};
 
-  const message0 = useStreamEventRecordAsMessage(record0, context);
+    // Use an undefined record and expect an error
+    t.throws(() => useStreamEventRecordAsMessage(undefined, context), Error, `using an undefined record must throw an error`);
+    t.throws(() => useStreamEventRecordAsMessage(null, context), Error, `using an undefined record must throw an error`);
 
-  t.ok(message0, 'message0 must exist');
-  t.deepEqual(message0, record0, 'message0 must match record0');
+    const message0 = useStreamEventRecordAsMessage(record0, context);
 
-  const eventSourceARN = samples.sampleDynamoDBEventSourceArn('eventSourceArnRegion', 'TestTable_DEV');
-  const record1 = samples.awsDynamoDBUpdateSampleEvent(eventSourceARN).Records[0];
+    t.ok(message0, 'message0 must exist');
+    t.deepEqual(message0, record0, 'message0 must match record0');
 
-  const message1 = useStreamEventRecordAsMessage(record1, context);
+    const eventSourceARN = samples.sampleDynamoDBEventSourceArn('eventSourceArnRegion', 'TestTable_DEV');
+    const record1 = samples.awsDynamoDBUpdateSampleEvent(eventSourceARN).Records[0];
 
-  t.ok(message1, 'message1 must exist');
-  t.deepEqual(message1, record1, 'message1 must match record1');
+    const message1 = useStreamEventRecordAsMessage(record1, context);
 
+    t.ok(message1, 'message1 must exist');
+    t.deepEqual(message1, record1, 'message1 must match record1');
 
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
   t.end();
 });
 
@@ -632,110 +1078,142 @@ test('useStreamEventRecordAsMessage', t => {
 // =====================================================================================================================
 
 test('discardUnusableRecordsToDRQ with 0 records', t => {
-  const context = {
-    kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const context = {
+      kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
+    };
+    logging.configureDefaultLogging(context);
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const event = samples.sampleKinesisEventWithRecords([record]);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const event = samples.sampleKinesisEventWithRecords([record]);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(1);
-  discardUnusableRecordsToDRQ([], context)
-    .then(results => {
-      t.equal(results.length, 0, `discardUnusableRecordsToDRQ results (${results.length}) must be 0`);
-    })
-    .catch(err => {
-      t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(1);
+    discardUnusableRecordsToDRQ([], context)
+      .then(results => {
+        t.equal(results.length, 0, `discardUnusableRecordsToDRQ results (${results.length}) must be 0`);
+      })
+      .catch(err => {
+        t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
 
 test('discardUnusableRecordsToDRQ with 1 record', t => {
-  const context = {
-    kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const context = {
+      kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
+    };
+    logging.configureDefaultLogging(context);
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const event = samples.sampleKinesisEventWithRecords([record]);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const event = samples.sampleKinesisEventWithRecords([record]);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(2);
-  discardUnusableRecordsToDRQ([record], context)
-    .then(results => {
-      t.equal(results.length, 1, `discardUnusableRecordsToDRQ results (${results.length}) must be 1`);
-    })
-    .catch(err => {
-      t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(2);
+    discardUnusableRecordsToDRQ([record], context)
+      .then(results => {
+        t.equal(results.length, 1, `discardUnusableRecordsToDRQ results (${results.length}) must be 1`);
+      })
+      .catch(err => {
+        t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
 
 test('discardUnusableRecordsToDRQ with 2 records', t => {
-  const context = {
-    kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-  const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const context = {
+      kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', undefined)
+    };
+    logging.configureDefaultLogging(context);
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const records = [record, record2];
-  const event = samples.sampleKinesisEventWithRecords(records);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const records = [record, record2];
+    const event = samples.sampleKinesisEventWithRecords(records);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(3);
-  discardUnusableRecordsToDRQ(records, context)
-    .then(results => {
-      t.equal(results.length, 2, `discardUnusableRecordsToDRQ results (${results.length}) must be 2`);
-    })
-    .catch(err => {
-      t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(3);
+    discardUnusableRecordsToDRQ(records, context)
+      .then(results => {
+        t.equal(results.length, 2, `discardUnusableRecordsToDRQ results (${results.length}) must be 2`);
+      })
+      .catch(err => {
+        t.fail(`discardUnusableRecordsToDRQ expected no failure - error: ${err.stack}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
 
 test('discardUnusableRecordsToDRQ with 1 record and failure', t => {
-  const error = new Error('Planned failure');
-  const context = {
-    kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', error)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const error = new Error('Planned failure');
+    const context = {
+      kinesis: dummyKinesis(t, 'discardUnusableRecordsToDRQ', error)
+    };
+    logging.configureDefaultLogging(context);
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const event = samples.sampleKinesisEventWithRecords([record]);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const event = samples.sampleKinesisEventWithRecords([record]);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(2);
-  discardUnusableRecordsToDRQ([record], context)
-    .then(() => {
-      t.fail(`discardUnusableRecordsToDRQ expected a failure`);
-    })
-    .catch(err => {
-      t.equal(err, error, `discardUnusableRecordsToDRQ error (${err}) must be ${error}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(2);
+    discardUnusableRecordsToDRQ([record], context)
+      .then(() => {
+        t.fail(`discardUnusableRecordsToDRQ expected a failure`);
+      })
+      .catch(err => {
+        t.equal(err, error, `discardUnusableRecordsToDRQ error (${err}) must be ${error}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
 
 // =====================================================================================================================
@@ -743,244 +1221,307 @@ test('discardUnusableRecordsToDRQ with 1 record and failure', t => {
 // =====================================================================================================================
 
 test('discardRejectedMessagesToDMQ with 0 messages', t => {
-  const context = {
-    kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const context = {
+      kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
+    };
+    logging.configureDefaultLogging(context);
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const event = samples.sampleKinesisEventWithRecords([record]);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const event = samples.sampleKinesisEventWithRecords([record]);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(1);
-  discardRejectedMessagesToDMQ([], context)
-    .then(results => {
-      t.equal(results.length, 0, `discardRejectedMessagesToDMQ results (${results.length}) must be 0`);
-    })
-    .catch(err => {
-      t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(1);
+    discardRejectedMessagesToDMQ([], context)
+      .then(results => {
+        t.equal(results.length, 0, `discardRejectedMessagesToDMQ results (${results.length}) must be 0`);
+      })
+      .catch(err => {
+        t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
 
 test('discardRejectedMessagesToDMQ with 1 message', t => {
-  const context = {
-    kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-  const message = sampleMessage();
-  message.taskTracking = {record: record};
+    const context = {
+      kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
+    };
+    logging.configureDefaultLogging(context);
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const event = samples.sampleKinesisEventWithRecords([record]);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const message = sampleMessage();
+    message.taskTracking = {record: record};
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const event = samples.sampleKinesisEventWithRecords([record]);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(2);
-  discardRejectedMessagesToDMQ([message], context)
-    .then(results => {
-      t.equal(results.length, 1, `discardRejectedMessagesToDMQ results (${results.length}) must be 1`);
-    })
-    .catch(err => {
-      t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(2);
+    discardRejectedMessagesToDMQ([message], context)
+      .then(results => {
+        t.equal(results.length, 1, `discardRejectedMessagesToDMQ results (${results.length}) must be 1`);
+      })
+      .catch(err => {
+        t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
 
 test('discardRejectedMessagesToDMQ with 2 messages', t => {
-  const context = {
-    kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-  const message = sampleMessage();
-  message.taskTracking = {record: record};
+    const context = {
+      kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', undefined)
+    };
+    logging.configureDefaultLogging(context);
 
-  const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-  const message2 = sampleMessage();
-  message2.taskTracking = {record: record2};
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const message = sampleMessage();
+    message.taskTracking = {record: record};
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const records = [record, record2];
-  const messages = [message, message2];
-  const event = samples.sampleKinesisEventWithRecords(records);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const message2 = sampleMessage();
+    message2.taskTracking = {record: record2};
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const records = [record, record2];
+    const messages = [message, message2];
+    const event = samples.sampleKinesisEventWithRecords(records);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(3);
-  discardRejectedMessagesToDMQ(messages, context)
-    .then(results => {
-      t.equal(results.length, 2, `discardRejectedMessagesToDMQ results (${results.length}) must be 2`);
-    })
-    .catch(err => {
-      t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(3);
+    discardRejectedMessagesToDMQ(messages, context)
+      .then(results => {
+        t.equal(results.length, 2, `discardRejectedMessagesToDMQ results (${results.length}) must be 2`);
+      })
+      .catch(err => {
+        t.fail(`discardRejectedMessagesToDMQ expected no failure - error: ${err.stack}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
 
 test('discardRejectedMessagesToDMQ with 1 record and failure', t => {
-  const error = new Error('Planned failure');
-  const context = {
-    kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', error)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-  const message = sampleMessage();
-  message.taskTracking = {record: record};
+    const error = new Error('Planned failure');
+    const context = {
+      kinesis: dummyKinesis(t, 'discardRejectedMessagesToDMQ', error)
+    };
+    logging.configureDefaultLogging(context);
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const event = samples.sampleKinesisEventWithRecords([record]);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', 'TestStream_DEV');
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const message = sampleMessage();
+    message.taskTracking = {record: record};
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const event = samples.sampleKinesisEventWithRecords([record]);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(2);
-  discardRejectedMessagesToDMQ([message], context)
-    .then(() => {
-      t.fail(`discardRejectedMessagesToDMQ expected a failure`);
-    })
-    .catch(err => {
-      t.equal(err, error, `discardRejectedMessagesToDMQ error (${err}) must be ${error}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(2);
+    discardRejectedMessagesToDMQ([message], context)
+      .then(() => {
+        t.fail(`discardRejectedMessagesToDMQ expected a failure`);
+      })
+      .catch(err => {
+        t.equal(err, error, `discardRejectedMessagesToDMQ error (${err}) must be ${error}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
-
 
 // =====================================================================================================================
 // resubmitIncompleteMessagesToKinesis
 // =====================================================================================================================
 
 test('resubmitIncompleteMessagesToKinesis with 0 messages', t => {
-  const context = {
-    kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const streamName = 'TestStream_DEV';
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const context = {
+      kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
+    };
+    logging.configureDefaultLogging(context);
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const event = samples.sampleKinesisEventWithRecords([record]);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const streamName = 'TestStream_DEV';
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const event = samples.sampleKinesisEventWithRecords([record]);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(1);
-  resubmitIncompleteMessagesToKinesis([], [], context)
-    .then(results => {
-      t.equal(results.length, 0, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 0`);
-    })
-    .catch(err => {
-      t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(1);
+    resubmitIncompleteMessagesToKinesis([], [], context)
+      .then(results => {
+        t.equal(results.length, 0, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 0`);
+      })
+      .catch(err => {
+        t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
 
 test('resubmitIncompleteMessagesToKinesis with 1 message', t => {
-  const context = {
-    kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const streamName = 'TestStream_DEV';
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-  const message = sampleMessage();
-  message.taskTracking = {record: record};
+    const context = {
+      kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
+    };
+    logging.configureDefaultLogging(context);
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const event = samples.sampleKinesisEventWithRecords([record]);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const streamName = 'TestStream_DEV';
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const message = sampleMessage();
+    message.taskTracking = {record: record};
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const event = samples.sampleKinesisEventWithRecords([record]);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(2);
-  resubmitIncompleteMessagesToKinesis([message], [message], context)
-    .then(results => {
-      t.equal(results.length, 1, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 1`);
-    })
-    .catch(err => {
-      t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(2);
+    resubmitIncompleteMessagesToKinesis([message], [message], context)
+      .then(results => {
+        t.equal(results.length, 1, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 1`);
+      })
+      .catch(err => {
+        t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
 
 test('resubmitIncompleteMessagesToKinesis with 2 messages', t => {
-  const context = {
-    kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const streamName = 'TestStream_DEV';
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-  const message = sampleMessage();
-  message.taskTracking = {record: record};
+    const context = {
+      kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', undefined)
+    };
+    logging.configureDefaultLogging(context);
 
-  const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-  const message2 = sampleMessage();
-  message2.taskTracking = {record: record2};
+    const streamName = 'TestStream_DEV';
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const message = sampleMessage();
+    message.taskTracking = {record: record};
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const records = [record, record2];
-  const messages = [message, message2];
-  const event = samples.sampleKinesisEventWithRecords(records);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const record2 = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const message2 = sampleMessage();
+    message2.taskTracking = {record: record2};
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const records = [record, record2];
+    const messages = [message, message2];
+    const event = samples.sampleKinesisEventWithRecords(records);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(3);
-  resubmitIncompleteMessagesToKinesis(messages, messages, context)
-    .then(results => {
-      t.equal(results.length, 2, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 2`);
-    })
-    .catch(err => {
-      t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(3);
+    resubmitIncompleteMessagesToKinesis(messages, messages, context)
+      .then(results => {
+        t.equal(results.length, 2, `resubmitIncompleteMessagesToKinesis results (${results.length}) must be 2`);
+      })
+      .catch(err => {
+        t.fail(`resubmitIncompleteMessagesToKinesis expected no failure - error: ${err.stack}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });
 
 test('resubmitIncompleteMessagesToKinesis with 1 record and failure', t => {
-  const error = new Error('Planned failure');
-  const context = {
-    kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', error)
-  };
-  logging.configureDefaultLogging(context);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  const streamName = 'TestStream_DEV';
-  const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
-  const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
-  const message = sampleMessage();
-  message.taskTracking = {record: record};
+    const error = new Error('Planned failure');
+    const context = {
+      kinesis: dummyKinesis(t, 'resubmitIncompleteMessagesToKinesis', error)
+    };
+    logging.configureDefaultLogging(context);
 
-  const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
-  const event = samples.sampleKinesisEventWithRecords([record]);
-  stages.configureDefaultStageHandling(context, false);
-  stages.configureStage(context, event, awsContext, true);
+    const streamName = 'TestStream_DEV';
+    const eventSourceARN = samples.sampleKinesisEventSourceArn('eventSourceArnRegion', streamName);
+    const record = samples.sampleKinesisRecord(undefined, undefined, eventSourceARN, 'eventAwsRegion');
+    const message = sampleMessage();
+    message.taskTracking = {record: record};
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, true);
+    const awsContext = samples.sampleAwsContext('functionName', '1.0.1', samples.sampleInvokedFunctionArn('invokedFunctionArnRegion', 'functionName', '1.0.1'));
+    const event = samples.sampleKinesisEventWithRecords([record]);
+    stages.configureDefaultStageHandling(context, false);
+    stages.configureStage(context, event, awsContext, true);
 
-  t.plan(2);
-  resubmitIncompleteMessagesToKinesis([message], [message], context)
-    .then(() => {
-      t.fail(`resubmitIncompleteMessagesToKinesis expected a failure`);
-    })
-    .catch(err => {
-      t.equal(err, error, `resubmitIncompleteMessagesToKinesis error (${err}) must be ${error}`);
-    });
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
+
+    t.plan(2);
+    resubmitIncompleteMessagesToKinesis([message], [message], context)
+      .then(() => {
+        t.fail(`resubmitIncompleteMessagesToKinesis expected a failure`);
+      })
+      .catch(err => {
+        t.equal(err, error, `resubmitIncompleteMessagesToKinesis error (${err}) must be ${error}`);
+      });
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
 });

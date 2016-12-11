@@ -1,54 +1,62 @@
 'use strict';
 
 /**
- * @typedef {StreamProcessing} StreamConsuming - an object with stream consumer configuration including stream
- * processing settings, stage handling settings, logging functionality, a region, a stage and an AWS context
+ * @typedef {StreamProcessing} StreamConsumerContext - a stream consumer context object configured with stream
+ * processing and all of the standard context configuration, including stage handling, logging, custom settings, an
+ * optional Kinesis instance, an optional DynamoDB.DocumentClient, the current region, the resolved stage and the AWS
+ * context.
  * @property {string} region - the configured region to use
  * @property {string} stage - the configured stage to use
  * @property {Object} awsContext - the AWS context, which was passed to your lambda
  */
 
 /**
- * @typedef {Object} StreamConsumerSettings - settings to be used to configure a stream consumer with stream processing
- * settings, stage handling settings and logging settings
- * @property {LoggingSettings|undefined} [loggingSettings] - optional logging settings to use to configure logging
- * @property {StageHandlingSettings|undefined} [stageHandlingSettings] - optional stage handling settings to use to configure stage handling
+ * @typedef {StandardSettings} StreamConsumerSettings - settings to be used to configure a stream consumer context with
+ * stream processing settings and all of the standard settings
  * @property {StreamProcessingSettings|undefined} [streamProcessingSettings] - optional stream processing settings to use to configure stream processing
  */
 
 /**
- * @typedef {Object} StreamConsumerOptions - options to be used to configure a stream consumer with stream processing
- * options, stage handling options and logging options if no corresponding settings are provided
- * @property {LoggingOptions|undefined} [loggingOptions] - optional logging options to use to configure logging
- * @property {StageHandlingOptions|undefined} [stageHandlingOptions] - optional stage handling options to use to configure stage handling
+ * @typedef {StandardOptions} StreamConsumerOptions - options to be used to configure a stream consumer context with
+ * stream processing options and all of the standard options
  * @property {StreamProcessingOptions|undefined} [streamProcessingOptions] - optional stream processing options to use to configure stream processing
  */
 
 /**
- * @typedef {StageHandling} StreamProcessing - an object configured with stream processing settings, stage handling
- * settings, logging functionality, an AWS.Kinesis instance and an optional AWS.DynamoDB.DocumentClient
+ * @typedef {StandardContext} StreamProcessing - an object configured with stream processing, stage handling,
+ * logging, custom settings, an optional AWS.Kinesis instance and an optional AWS.DynamoDB.DocumentClient and also
+ * OPTIONALLY with the current region, the resolved stage and the AWS context
  * @property {StreamProcessingSettings} streamProcessing - the configured stream processing settings to use
- * @property {AWS.Kinesis} kinesis - an AWS.Kinesis instance to use
- * @property {AWS.DynamoDB.DocumentClient|undefined} [dynamoDBDocClient] - an optional AWS.DynamoDB.DocumentClient instance to use
  */
 
 /**
  * Stream processing settings which configure and determine the processing behaviour of an AWS stream consumer.
+ *
  * @typedef {StreamProcessingOptions} StreamProcessingSettings
- * @property {Function} extractMessageFromRecord - a synchronous function that will be used to extract a message from a
- * given stream event record, which must accept a record and the given context as arguments and return the extracted
- * message or throw an exception if a message cannot be extracted from the record
- * @property {Function} loadTaskTrackingState - a function that will be used to load the task tracking state of the
- * entire batch of messages and that must accept: an array of the entire batch of messages and the context
- * @property {Function} saveTaskTrackingState - a function that will be used to save the task tracking state of the
- * entire batch of messages and that must accept: an array of the entire batch of messages and the context
- * @property {Function} handleIncompleteMessages - a function that will be used to handle any incomplete messages and
- * that must accept: an array of the entire batch of messages; an array of incomplete messages; and the context and
+ *
+ * @property {function(record: Object, context: StreamConsumerContext): Object} extractMessageFromRecord - a synchronous function that
+ * will be used to extract a message from a given stream event record, which must accept a record and the given context
+ * as arguments and return the extracted message or throw an exception if a message cannot be extracted from the record
+ *
+ * @property {function(messages: Object[], context: StreamConsumerContext): Promise} loadTaskTrackingState - a function that will
+ * be used to load the task tracking state of the entire batch of messages and that must accept: an array of the entire
+ * batch of messages and the context
+ *
+ * @property {function(messages: Object[], context: StreamConsumerContext): Promise} saveTaskTrackingState - a function that will be
+ * used to save the task tracking state of the entire batch of messages and that must accept: an array of the entire
+ * batch of messages and the context
+ *
+ * @property {function(messages: Object[], incompleteMessages: Object[], context: StreamConsumerContext): Promise.<*>} handleIncompleteMessages -
+ * a function that will be used to handle any incomplete messages and that must accept: an array of the entire batch of
+ * messages; an array of incomplete messages; and the context and ideally return a promise
+ *
+ * @property {function(unusableRecords: Object[], context: StreamConsumerContext): Promise} discardUnusableRecords - a function that
+ * will be used to discard any unusable records and that must accept an array of unusable records and the context and
  * ideally return a promise
- * @property {Function} discardUnusableRecords - a function that will be used to discard any unusable records and that must
- * accept an array of unusable records and the context and ideally return a promise
- * @property {Function} discardRejectedMessages - a function that will be used to discard any rejected messages and that
- * must accept an array of rejected messages and the context and ideally return a promise
+ *
+ * @property {function(rejectedRecords: Object[], context: StreamConsumerContext): Promise} discardRejectedMessages - a function that
+ * will be used to discard any rejected messages and that must accept an array of rejected messages and the context and
+ * ideally return a promise
  */
 
 /**
@@ -70,21 +78,6 @@
  * to which to save the task tracking state of the entire batch of messages
  * @property {string} deadRecordQueueName - the unqualified stream name of the Dead Record Queue to which to discard unusable records
  * @property {string} deadMessageQueueName - the unqualified stream name of the Dead Message Queue to which to discard rejected messages
- * @property {Object|undefined} [kinesisOptions] - optional Kinesis constructor options to use to configure an AWS.Kinesis instance
- * @property {Object|undefined} [dynamoDBDocClientOptions] - optional DynamoDB.DocumentClient constructor options to use to configure an AWS.DynamoDB.DocumentClient instance
- */
-
-/**
- * @typedef {Object} SPOtherSettings - other settings to be used to configure stream processing dependencies
- * @property {LoggingSettings|undefined} [loggingSettings] - optional logging settings to use to configure logging
- * @property {StageHandlingSettings|undefined} [stageHandlingSettings] - optional stage handling settings to use to configure stage handling
- */
-
-/**
- * @typedef {Object} SPOtherOptions - other options be used if no corresponding settings are provided to configure
- * stream processing dependencies
- * @property {LoggingOptions|undefined} [loggingOptions] - optional logging options to use to configure logging
- * @property {StageHandlingOptions|undefined} [stageHandlingOptions] - optional stage handling options to use to configure stage handling
  */
 
 /**

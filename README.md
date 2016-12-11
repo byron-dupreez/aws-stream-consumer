@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.14
+# aws-stream-consumer v1.0.0-beta.15
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -124,7 +124,7 @@ To use the `aws-stream-consumer` module:
 const context = {}; // ... or your own context object
 
 const settings = undefined; // ... or your own settings for custom configuration of any or all logging, stage handling and/or stream processing settings
-const options = require('aws-stream-consumer/kinesis-options.json'); // ... or your own options for custom configuration of any or all logging, stage handling, kinesis and/or stream processing options
+const options = require('aws-stream-consumer/default-kinesis-options.json'); // ... or your own options for custom configuration of any or all logging, stage handling, kinesis and/or stream processing options
 const forceConfiguration = false;
 
 // Configure the stream consumer's dependencies and runtime settings
@@ -273,7 +273,8 @@ kinesisCache.configureKinesis(context, kinesisOptions);
 const streamProcessing = require('aws-stream-consumer/stream-processing');
 
 // EITHER - configure with your own custom stream processing settings and/or stream processing options
-streamProcessing.configureStreamProcessing(context, streamProcessingSettings, streamProcessingOptions, settings, options, forceConfiguration);
+streamProcessing.configureStreamProcessing(context, streamProcessingSettings, streamProcessingOptions, settings, options, 
+  awsEvent, awsContext, forceConfiguration);
 
 // ... OR - start with the default settings and override with your own custom stream processing settings
 const streamProcessingSettings = streamProcessing.getDefaultKinesisStreamProcessingSettings(streamProcessingOptions);
@@ -284,10 +285,12 @@ const streamProcessingSettings = streamProcessing.getDefaultKinesisStreamProcess
 // streamProcessingSettings.handleIncompleteMessages = streamProcessing.DEFAULTS.resubmitIncompleteMessagesToKinesis;
 // streamProcessingSettings.discardUnusableRecords = streamProcessing.DEFAULTS.discardUnusableRecordsToDRQ;
 // streamProcessingSettings.discardRejectedMessages = streamProcessing.DEFAULTS.discardRejectedMessagesToDMQ;
-streamProcessing.configureStreamProcessing(context, streamProcessingSettings, undefined, settings, options, forceConfiguration);
+streamProcessing.configureStreamProcessing(context, streamProcessingSettings, undefined, settings, options, 
+  awsEvent, awsContext, forceConfiguration);
 
 // ... OR - simply override the default stream processing options with your custom streamProcessingOptions
-streamProcessing.configureDefaultKinesisStreamProcessing(context, streamProcessingOptions, settings, options, forceConfiguration); 
+streamProcessing.configureDefaultKinesisStreamProcessing(context, streamProcessingOptions, settings, options, 
+  awsEvent, awsContext, forceConfiguration); 
 // Note that this last approach does NOT give you the option of overriding the default stream processing functions, 
 // which can only be configured via stream processing settings (i.e. not via stream processing options)
 ```
@@ -312,6 +315,37 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.0-beta.15
+- Changes to `type-defs.js` module:
+  - Renamed `StreamConsuming` typedef to `StreamConsumerContext` & changed it to extend from `StandardContext`
+  - Changed `StreamConsumerSettings` typedef to extend from `StandardSettings`
+  - Changed `StreamConsumerOptions` typedef to extend from `StandardOptions`
+  - Changed `StreamProcessing` typedef to extend from `StandardContext`
+  - Removed `SPOtherSettings` & `SPOtherOptions` typedefs (replaced by `StandardSettings` & `StandardOptions`)
+  - Removed optional `kinesisOptions` & `dynamoDBDocClientOptions` from `StreamProcessingOptions` typedef
+- Changes to `stream-processing.js` module:
+  - Added optional AWS event and AWS context arguments to `configureStreamProcessing`, 
+    `configureStreamProcessingWithSettings`, `configureDefaultKinesisStreamProcessing` and
+    `configureDefaultDynamoDBStreamProcessing` functions to enable full or partial stream consumer 
+    configuration
+  - Changed `configureStreamProcessingWithSettings` function to use new `aws-core-utils/contexts` module's
+    `configureStandardContext` function
+  - Removed unnecessary `configureDependencies` function
+  - Improved JsDoc type definitions of all configuration functions
+- Changes to `stream-consumer.js` module:
+  - Changed JsDoc comments of `configureStreamConsumer` function to allow its AWS event and AWS context 
+    arguments to be optional, to enable partial configuration that must be completed before invoking 
+    `processStreamEvent` by invoking the `configureRegionStageAndAwsContext` function of the 
+    `aws-core-utils/stages` module
+  - Changed `configureStreamConsumer` function to pass its now optional AWS event and AWS context through 
+    to the `stream-processing` module's modified `configureStreamProcessing` function
+  - Removed `configureRegionStageAndAwsContext` function, which was moved to `aws-core-utils/stages` module
+  - Improved JsDoc type definitions of all configuration functions
+- Renamed `kinesis-options.json` file to `default-kinesis-options.json`  
+- Renamed `dynamodb-options.json` file to `default-dynamodb-options.json`  
+- Updated `logging-utils` dependency to version 3.0.9
+- Updated `aws-core-utils` dependency to version 5.0.12
 
 ### 1.0.0-beta.14
 - Fixed broken unit tests by changing incorrect imports of `node-uuid` to `uuid`
