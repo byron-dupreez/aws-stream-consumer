@@ -108,7 +108,7 @@ function dummyKinesis(t, prefix, error) {
       return {
         promise() {
           return new Promise((resolve, reject) => {
-            t.pass(`${prefix} simulated putRecord to Kinesis`);
+            t.pass(`${prefix} simulated putRecord to Kinesis with request (${stringify(request)})`);
             if (error)
               reject(error);
             else
@@ -289,6 +289,7 @@ function setRegionStageAndDeleteCachedInstances(region, stage) {
   process.env.STAGE = stage;
   // Remove any cached entries before configuring
   deleteCachedInstances();
+  return region;
 }
 
 function deleteCachedInstances() {

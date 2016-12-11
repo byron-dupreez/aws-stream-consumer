@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.15
+# aws-stream-consumer v1.0.0-beta.16
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -315,6 +315,9 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.0-beta.16
+- Changes to unit tests to ensure reset of environment variables
 
 ### 1.0.0-beta.15
 - Changes to `type-defs.js` module:

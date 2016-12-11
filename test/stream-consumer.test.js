@@ -21,8 +21,8 @@ const taskUtils = require('task-utils/task-utils');
 
 const regions = require("aws-core-utils/regions");
 const stages = require("aws-core-utils/stages");
-//const streamEvents = require("aws-core-utils/stream-events");
-// const kinesisCache = require("aws-core-utils/kinesis-cache");
+const kinesisCache = require("aws-core-utils/kinesis-cache");
+const dynamoDBDocClientCache = require("aws-core-utils/dynamodb-doc-client-cache");
 
 require("core-functions/promises");
 
@@ -35,9 +35,20 @@ const logging = require("logging-utils");
 
 const samples = require("./samples");
 
-function setupRegion(region) {
-  regions.ONLY_FOR_TESTING.setRegionIfNotSet(region);
-  return regions.getRegion(true);
+function setRegionStageAndDeleteCachedInstances(region, stage) {
+  // Set up region
+  process.env.AWS_REGION = region;
+  // Set up stage
+  process.env.STAGE = stage;
+  // Remove any cached entries before configuring
+  deleteCachedInstances();
+  return region;
+}
+
+function deleteCachedInstances() {
+  const region = regions.getRegion();
+  kinesisCache.deleteKinesis(region);
+  dynamoDBDocClientCache.deleteDynamoDBDocClient(region);
 }
 
 function sampleKinesisEvent(streamName, partitionKey, data, omitEventSourceARN) {
@@ -45,15 +56,6 @@ function sampleKinesisEvent(streamName, partitionKey, data, omitEventSourceARN) 
   const eventSourceArn = omitEventSourceARN ? undefined : samples.sampleKinesisEventSourceArn(region, streamName);
   return samples.sampleKinesisEventWithSampleRecord(partitionKey, data, eventSourceArn, region);
 }
-
-// function sampleKinesisEventWithRecords(streamNames, partitionKey, data) {
-//   const region = process.env.AWS_REGION;
-//   const records = streamNames.map(streamName => {
-//     const eventSourceArn = samples.sampleEventSourceArn(region, streamName);
-//     return samples.sampleKinesisRecord(partitionKey, data, eventSourceArn, region);
-//   });
-//   return samples.sampleKinesisEventWithRecords(records);
-// }
 
 function sampleAwsContext(functionVersion, functionAlias, maxTimeInMillis) {
   const region = process.env.AWS_REGION;
@@ -379,222 +381,239 @@ function checkMessageTasksStates(t, message, oneStateType, allStateType, context
 // =====================================================================================================================
 
 test('processStreamEvent with 1 message that succeeds all tasks', t => {
-  const context = {};
-
-  const n = 1;
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  configureDefaults(t, context, undefined);
-
-  // Setup the task definitions
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
+    const context = {};
+
+    const n = 1;
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    configureDefaults(t, context, undefined);
+
+    // Setup the task definitions
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(results => {
+          t.pass(`processStreamEvent must resolve`);
+          const messages = results.messages;
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+          checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.CompletedState, context);
+          t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
+          t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
+
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
+
+          t.end();
+        })
+        .catch(err => {
+          t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
+          t.end(err);
+        });
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
     }
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
-
-    promise
-      .then(results => {
-        t.pass(`processStreamEvent must resolve`);
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.CompletedState, context);
-        t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
-        t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
-
-        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
-
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
-
-        t.end();
-      })
-      .catch(err => {
-        t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
-        t.end(err);
-      });
-
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
 });
 
 
 test('processStreamEvent with 1 message that succeeds all tasks (despite broken Kinesis, i.e. no unusable/rejected/incomplete)', t => {
-  const context = {};
-
-  const n = 1;
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  configureDefaults(t, context, new Error('Disabling Kinesis'));
-
-  // Setup the task definitions
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
+    const context = {};
+
+    const n = 1;
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    configureDefaults(t, context, new Error('Disabling Kinesis'));
+
+    // Setup the task definitions
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(results => {
+          t.pass(`processStreamEvent must resolve`);
+          const messages = results.messages;
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+          checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.CompletedState, context);
+          t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
+          t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
+
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
+
+          t.end();
+        })
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
     }
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
-
-    promise
-      .then(results => {
-        t.pass(`processStreamEvent must resolve`);
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.CompletedState, context);
-        t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
-        t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
-
-        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
-
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
-
-        t.end();
-      })
-
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
 });
 
 test('processStreamEvent with 10 messages that succeed all tasks (despite broken Kinesis, i.e. no unusable/rejected/incomplete)', t => {
-  const context = {};
-
-  const n = 10;
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const records = [];
-  for (let i = 0; i < n; ++i) {
-    const eventSourceArn = samples.sampleKinesisEventSourceArn(region, streamName);
-    const record = samples.sampleKinesisRecord(undefined, sampleMessage(i + 1), eventSourceArn, region);
-    records.push(record);
-  }
-  const event = samples.sampleKinesisEventWithRecords(records);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  //configureDefaults(t, context, undefined);
-  configureDefaults(t, context, new Error('Disabling Kinesis'));
-
-  // Setup the task definitions
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
+    const context = {};
+
+    const n = 10;
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const records = [];
+    for (let i = 0; i < n; ++i) {
+      const eventSourceArn = samples.sampleKinesisEventSourceArn(region, streamName);
+      const record = samples.sampleKinesisRecord(undefined, sampleMessage(i + 1), eventSourceArn, region);
+      records.push(record);
+    }
+    const event = samples.sampleKinesisEventWithRecords(records);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    //configureDefaults(t, context, undefined);
+    configureDefaults(t, context, new Error('Disabling Kinesis'));
+
+    // Setup the task definitions
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(results => {
+          t.pass(`processStreamEvent must resolve`);
+          const messages = results.messages;
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+          checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.CompletedState, context);
+          for (let i = 0; i < messages.length; ++i) {
+            t.equal(messages[i].taskTracking.ones.Task1.attempts, 1, `message ${messages[i].id} Task1 attempts must be 1`);
+            t.equal(messages[i].taskTracking.alls.Task2.attempts, 1, `message ${messages[i].id} Task2 attempts must be 1`);
+          }
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
+
+          t.end();
+        })
+        .catch(err => {
+          t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
+          t.end(err);
+        });
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
     }
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
-
-    promise
-      .then(results => {
-        t.pass(`processStreamEvent must resolve`);
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.CompletedState, context);
-        for (let i = 0; i < messages.length; ++i) {
-          t.equal(messages[i].taskTracking.ones.Task1.attempts, 1, `message ${messages[i].id} Task1 attempts must be 1`);
-          t.equal(messages[i].taskTracking.alls.Task2.attempts, 1, `message ${messages[i].id} Task2 attempts must be 1`);
-        }
-        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
-
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
-
-        t.end();
-      })
-      .catch(err => {
-        t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
-        t.end(err);
-      });
-
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
-
 });
 
 // =====================================================================================================================
@@ -602,141 +621,324 @@ test('processStreamEvent with 10 messages that succeed all tasks (despite broken
 // =====================================================================================================================
 
 test('processStreamEvent with 1 unusable record', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const event = sampleKinesisEvent(streamName, undefined, undefined, false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  configureDefaults(t, context, undefined);
-
-  // Setup the task definitions
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
+    const context = {};
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const event = sampleKinesisEvent(streamName, undefined, undefined, false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    configureDefaults(t, context, undefined);
+
+    // Setup the task definitions
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(results => {
+          const n = 0;
+          t.pass(`processStreamEvent must resolve`);
+          const messages = results.messages;
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+          t.equal(results.unusableRecords.length, 1, `processStreamEvent results must have ${1} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 1, `processStreamEvent results must have ${1} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
+
+          t.end();
+        })
+        .catch(err => {
+          t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
+          t.end(err);
+        });
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
     }
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
-
-    promise
-      .then(results => {
-        const n = 0;
-        t.pass(`processStreamEvent must resolve`);
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-
-        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
-
-        t.equal(results.unusableRecords.length, 1, `processStreamEvent results must have ${1} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 1, `processStreamEvent results must have ${1} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
-
-        t.end();
-      })
-      .catch(err => {
-        t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
-        t.end(err);
-      });
-
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
 });
 
 test('processStreamEvent with 1 unusable record, but if cannot discard must fail', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const event = sampleKinesisEvent(streamName, undefined, undefined, false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  const fatalError = new Error('Disabling Kinesis');
-  configureDefaults(t, context, fatalError);
-
-  // Setup the task definitions
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
+    const context = {};
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const event = sampleKinesisEvent(streamName, undefined, undefined, false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    const fatalError = new Error('Disabling Kinesis');
+    configureDefaults(t, context, fatalError);
+
+    // Setup the task definitions
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(messages => {
+          const n = messages.length;
+          t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
+          t.end();
+        })
+        .catch(err => {
+            t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
+            t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
+
+            streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+              const messages = results.messages;
+              t.equal(messages.length, 0, `processStreamEvent results must have ${0} messages`);
+              t.equal(results.unusableRecords.length, 1, `processStreamEvent results must have ${1} unusable records`);
+
+              t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+              t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+              t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+              if (results.discardedUnusableRecords || !results.discardUnusableRecordsError) {
+                t.fail(`discardUnusableRecords must fail`);
+              }
+              t.equal(results.discardUnusableRecordsError, fatalError, `discardUnusableRecords must fail with ${fatalError}`);
+
+              if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
+                t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
+              }
+              if (results.handledIncompleteMessages) {
+                t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete records`);
+              }
+
+              if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
+                t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
+              }
+              if (results.discardedRejectedMessages) {
+                t.equal(results.discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
+              }
+
+              t.end();
+            });
+          }
+        );
+    } catch
+      (err) {
+      t.fail(`processStreamEvent should NOT have failed on try-catch (${err})`, err.stack);
+      t.end(err);
     }
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+});
 
-    promise
-      .then(messages => {
-        const n = messages.length;
-        t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
-        t.end();
-      })
-      .catch(err => {
+// =====================================================================================================================
+// processStreamEvent with failing processOne message(s)
+// =====================================================================================================================
+
+test('processStreamEvent with 1 message that fails its processOne task, resubmits', t => {
+  try {
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
+
+    const context = {};
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    configureDefaults(t, context, undefined);
+
+    // Setup the task definitions
+    const processOneError = new Error('Failing process one task');
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, processOneError));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(results => {
+          t.pass(`processStreamEvent must resolve`);
+          const n = 1;
+          const messages = results.messages;
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+          checkMessagesTasksStates(t, messages, taskStates.Failed, taskStates.CompletedState, context);
+          t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
+          t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
+
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
+
+          t.end();
+        })
+        .catch(err => {
+          t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
+          t.end(err);
+        });
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+});
+
+test('processStreamEvent with 1 message that fails its processOne task, but cannot resubmit must fail', t => {
+  try {
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
+
+    const context = {};
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    const fatalError = new Error('Disabling Kinesis');
+    configureDefaults(t, context, fatalError);
+
+    // Setup the task definitions
+    const processOneError = new Error('Failing process one task');
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, processOneError));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(messages => {
+          const n = messages.length;
+          t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
+          t.end();
+        })
+        .catch(err => {
           t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
           t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
 
           streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
             const messages = results.messages;
-            t.equal(messages.length, 0, `processStreamEvent results must have ${0} messages`);
-            t.equal(results.unusableRecords.length, 1, `processStreamEvent results must have ${1} unusable records`);
+            t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+            t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
 
             t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
             t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
             t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-            if (results.discardedUnusableRecords || !results.discardUnusableRecordsError) {
-              t.fail(`discardUnusableRecords must fail`);
+            if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+              t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
             }
-            t.equal(results.discardUnusableRecordsError, fatalError, `discardUnusableRecords must fail with ${fatalError}`);
+            if (results.discardedUnusableRecords) {
+              t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+            }
 
-            if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
-              t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
+            if (results.handledIncompleteMessages || !results.handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must fail with ${results.handleIncompleteMessagesError}`);
             }
-            if (results.handledIncompleteMessages) {
-              t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete records`);
-            }
+            t.equal(results.handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
 
             if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
               t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
@@ -747,175 +949,16 @@ test('processStreamEvent with 1 unusable record, but if cannot discard must fail
 
             t.end();
           });
-        }
-      );
-  } catch
-    (err) {
-    t.fail(`processStreamEvent should NOT have failed on try-catch (${err})`, err.stack);
-    t.end(err);
-  }
-});
-
-// =====================================================================================================================
-// processStreamEvent with failing processOne message(s)
-// =====================================================================================================================
-
-test('processStreamEvent with 1 message that fails its processOne task, resubmits', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  configureDefaults(t, context, undefined);
-
-  // Setup the task definitions
-  const processOneError = new Error('Failing process one task');
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, processOneError));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
-  try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
-
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
-    }
-
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
-
-    promise
-      .then(results => {
-        t.pass(`processStreamEvent must resolve`);
-        const n = 1;
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Failed, taskStates.CompletedState, context);
-        t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
-        t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
-
-        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
-
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
-
-        t.end();
-      })
-      .catch(err => {
-        t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
-        t.end(err);
-      });
-
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
-  }
-});
-
-test('processStreamEvent with 1 message that fails its processOne task, but cannot resubmit must fail', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  const fatalError = new Error('Disabling Kinesis');
-  configureDefaults(t, context, fatalError);
-
-  // Setup the task definitions
-  const processOneError = new Error('Failing process one task');
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, processOneError));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
-  try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
-
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
-    }
-
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
-
-    promise
-      .then(messages => {
-        const n = messages.length;
-        t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
-        t.end();
-      })
-      .catch(err => {
-        t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
-        t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
-
-        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
-          const messages = results.messages;
-          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-
-          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
-
-          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
-            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
-          }
-          if (results.discardedUnusableRecords) {
-            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-          }
-
-          if (results.handledIncompleteMessages || !results.handleIncompleteMessagesError) {
-            t.fail(`handleIncompleteMessages must fail with ${results.handleIncompleteMessagesError}`);
-          }
-          t.equal(results.handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
-
-          if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
-            t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
-          }
-          if (results.discardedRejectedMessages) {
-            t.equal(results.discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
-          }
-
-          t.end();
         });
-      });
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
 });
 
@@ -924,161 +967,173 @@ test('processStreamEvent with 1 message that fails its processOne task, but cann
 // =====================================================================================================================
 
 test('processStreamEvent with 1 message that fails its processAll task, resubmits', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  configureDefaults(t, context, undefined);
-
-  // Setup the task definitions
-  const processAllError = new Error('Failing process all task');
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, processAllError));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
-    }
+    const context = {};
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
 
-    promise
-      .then(results => {
-        t.pass(`processStreamEvent must resolve`);
-        const n = 1;
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.FailedState, context);
-        t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
-        t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
 
-        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    configureDefaults(t, context, undefined);
 
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
+    // Setup the task definitions
+    const processAllError = new Error('Failing process all task');
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, processAllError));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
 
-        t.end();
-      })
-      .catch(err => {
-        t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
-        t.end(err);
-      });
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
-  }
-});
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
 
-test('processStreamEvent with 1 message that fails its processAll task, but cannot resubmit must fail', t => {
-  const context = {};
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  const fatalError = new Error('Disabling Kinesis');
-  configureDefaults(t, context, fatalError);
-
-  // Setup the task definitions
-  const processAllError = new Error('Failing process one task');
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, processAllError));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
-  try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
-
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
-    }
-
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
-
-    promise
-      .then(messages => {
-        const n = messages.length;
-        t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
-        t.end();
-      })
-      .catch(err => {
-        t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
-        t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
-
-        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+      promise
+        .then(results => {
+          t.pass(`processStreamEvent must resolve`);
+          const n = 1;
           const messages = results.messages;
-          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+          checkMessagesTasksStates(t, messages, taskStates.CompletedState, taskStates.FailedState, context);
+          t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
+          t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
           t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
           t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
           t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
-            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
-          }
-          if (results.discardedUnusableRecords) {
-            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-          }
-
-          if (results.handledIncompleteMessages || !results.handleIncompleteMessagesError) {
-            t.fail(`handleIncompleteMessages must fail with ${results.handleIncompleteMessagesError}`);
-          }
-          t.equal(results.handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
-
-          if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
-            t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
-          }
-          if (results.discardedRejectedMessages) {
-            t.equal(results.discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
-          }
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
 
           t.end();
+        })
+        .catch(err => {
+          t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
+          t.end(err);
         });
-      });
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+});
+
+test('processStreamEvent with 1 message that fails its processAll task, but cannot resubmit must fail', t => {
+  try {
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
+
+    const context = {};
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    const fatalError = new Error('Disabling Kinesis');
+    configureDefaults(t, context, fatalError);
+
+    // Setup the task definitions
+    const processAllError = new Error('Failing process one task');
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, processAllError));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(messages => {
+          const n = messages.length;
+          t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
+          t.end();
+        })
+        .catch(err => {
+          t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
+          t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
+
+          streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+            const messages = results.messages;
+            t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+            t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+
+            t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+            t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+            t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+            if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+              t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+            }
+            if (results.discardedUnusableRecords) {
+              t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+            }
+
+            if (results.handledIncompleteMessages || !results.handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must fail with ${results.handleIncompleteMessagesError}`);
+            }
+            t.equal(results.handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
+
+            if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
+              t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
+            }
+            if (results.discardedRejectedMessages) {
+              t.equal(results.discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
+            }
+
+            t.end();
+          });
+        });
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
 });
 
@@ -1087,184 +1142,196 @@ test('processStreamEvent with 1 message that fails its processAll task, but cann
 // =====================================================================================================================
 
 test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task - must discard rejected message', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const msg = sampleMessage(1);
-
-  // Add some "history" to this message to give it a no-longer active task that will trigger abandonment of this task
-  const taskX = Task.createTask(TaskDef.defineTask('TaskX', execute1));
-  taskX.fail(new Error('Previously failed'));
-  for (let i = 0; i < 100; ++i) {
-    taskX.incrementAttempts();
-  }
-  const taskXLike = JSON.parse(JSON.stringify(taskX));
-
-  msg.taskTracking = {ones: {'TaskX': taskXLike}};
-  const m = JSON.parse(JSON.stringify(msg));
-  t.ok(m, 'Message with tasks is parsable');
-  const taskXRevived = m.taskTracking.ones.TaskX;
-  t.ok(Task.isTaskLike(taskXRevived), `TaskX must be task-like (${stringify(taskXRevived)})`);
-  t.deepEqual(taskXRevived, taskXLike, `TaskX revived must be original TaskX task-like (${stringify(taskXRevived)})`);
-  // console.log(`##### TASK X  ${JSON.stringify(taskX)}`);
-  // console.log(`##### REVIVED ${JSON.stringify(taskXRevived)}`);
-
-  const event = sampleKinesisEvent(streamName, undefined, msg, false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  configureDefaults(t, context, undefined);
-
-  // Setup the task definitions
-  //const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined)); //.then(msg => taskUtils.getTask(msg.taskTracking.ones, 'Task1')
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = []; //[taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
+    const context = {};
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const msg = sampleMessage(1);
+
+    // Add some "history" to this message to give it a no-longer active task that will trigger abandonment of this task
+    const taskX = Task.createTask(TaskDef.defineTask('TaskX', execute1));
+    taskX.fail(new Error('Previously failed'));
+    for (let i = 0; i < 100; ++i) {
+      taskX.incrementAttempts();
     }
+    const taskXLike = JSON.parse(JSON.stringify(taskX));
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+    msg.taskTracking = {ones: {'TaskX': taskXLike}};
+    const m = JSON.parse(JSON.stringify(msg));
+    t.ok(m, 'Message with tasks is parsable');
+    const taskXRevived = m.taskTracking.ones.TaskX;
+    t.ok(Task.isTaskLike(taskXRevived), `TaskX must be task-like (${stringify(taskXRevived)})`);
+    t.deepEqual(taskXRevived, taskXLike, `TaskX revived must be original TaskX task-like (${stringify(taskXRevived)})`);
+    // console.log(`##### TASK X  ${JSON.stringify(taskX)}`);
+    // console.log(`##### REVIVED ${JSON.stringify(taskXRevived)}`);
 
-    promise
-      .then(results => {
-        t.pass(`processStreamEvent must resolve`);
-        const n = 1;
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Abandoned, taskStates.CompletedState, context);
-        t.equal(messages[0].taskTracking.ones.TaskX.attempts, 100, `TaskX attempts must be 100`);
-        t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
+    const event = sampleKinesisEvent(streamName, undefined, msg, false);
 
-        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
 
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 1, `processStreamEvent results must have ${1} discarded rejected messages`);
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    configureDefaults(t, context, undefined);
 
-        t.end();
-      })
-      .catch(err => {
-        t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
-        t.end(err);
-      });
+    // Setup the task definitions
+    //const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined)); //.then(msg => taskUtils.getTask(msg.taskTracking.ones, 'Task1')
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = []; //[taskDef1];
+    const processAllTaskDefs = [taskDef2];
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
-  }
-});
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
-test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task - must fail if cannot discard rejected message', t => {
-  const context = {};
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
 
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const msg = sampleMessage(1);
-
-  // Add some "history" to this message to give it a no-longer active task that will trigger abandonment of this task
-  const taskX = Task.createTask(TaskDef.defineTask('TaskX', execute1));
-  taskX.fail(new Error('Previously failed'));
-  msg.taskTracking = {ones: {'TaskX': JSON.parse(JSON.stringify(taskX))}};
-
-  const event = sampleKinesisEvent(streamName, undefined, msg, false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  const fatalError = new Error('Disabling Kinesis');
-  configureDefaults(t, context, fatalError);
-
-  // Setup the task definitions
-  //const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined)); //.then(msg => taskUtils.getTask(msg.taskTracking.ones, 'Task1')
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = []; //[taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
-  try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
-
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
-    }
-
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
-
-    promise
-      .then(messages => {
-        const n = messages.length;
-        t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
-        t.end();
-      })
-      .catch(err => {
-        t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
-        t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
-
-        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+      promise
+        .then(results => {
+          t.pass(`processStreamEvent must resolve`);
+          const n = 1;
           const messages = results.messages;
-          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+          checkMessagesTasksStates(t, messages, taskStates.Abandoned, taskStates.CompletedState, context);
+          t.equal(messages[0].taskTracking.ones.TaskX.attempts, 100, `TaskX attempts must be 100`);
+          t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
           t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
           t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
           t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
-            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
-          }
-          if (results.discardedUnusableRecords) {
-            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-          }
-
-          if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
-            t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
-          }
-          if (results.handledIncompleteMessages) {
-            t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
-          }
-
-          if (results.discardedRejectedMessages || !results.discardRejectedMessagesError) {
-            t.fail(`discardRejectedMessages must fail with ${results.discardRejectedMessagesError}`);
-          }
-          t.equal(results.discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 1, `processStreamEvent results must have ${1} discarded rejected messages`);
 
           t.end();
+        })
+        .catch(err => {
+          t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
+          t.end(err);
         });
-      });
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+});
+
+test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task - must fail if cannot discard rejected message', t => {
+  try {
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
+
+    const context = {};
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const msg = sampleMessage(1);
+
+    // Add some "history" to this message to give it a no-longer active task that will trigger abandonment of this task
+    const taskX = Task.createTask(TaskDef.defineTask('TaskX', execute1));
+    taskX.fail(new Error('Previously failed'));
+    msg.taskTracking = {ones: {'TaskX': JSON.parse(JSON.stringify(taskX))}};
+
+    const event = sampleKinesisEvent(streamName, undefined, msg, false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    const fatalError = new Error('Disabling Kinesis');
+    configureDefaults(t, context, fatalError);
+
+    // Setup the task definitions
+    //const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined)); //.then(msg => taskUtils.getTask(msg.taskTracking.ones, 'Task1')
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = []; //[taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(messages => {
+          const n = messages.length;
+          t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
+          t.end();
+        })
+        .catch(err => {
+          t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
+          t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
+
+          streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+            const messages = results.messages;
+            t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+            t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+
+            t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+            t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+            t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+            if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+              t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+            }
+            if (results.discardedUnusableRecords) {
+              t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+            }
+
+            if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
+            }
+            if (results.handledIncompleteMessages) {
+              t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
+            }
+
+            if (results.discardedRejectedMessages || !results.discardRejectedMessagesError) {
+              t.fail(`discardRejectedMessages must fail with ${results.discardRejectedMessagesError}`);
+            }
+            t.equal(results.discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
+
+            t.end();
+          });
+        });
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
 });
 
@@ -1273,175 +1340,187 @@ test('processStreamEvent with 1 message that succeeds, but has 1 abandoned task 
 // =====================================================================================================================
 
 test('processStreamEvent with 1 message that rejects - must discard rejected message', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const msg = sampleMessage(1);
-
-  const event = sampleKinesisEvent(streamName, undefined, msg, false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  configureDefaults(t, context, undefined);
-
-  // Setup the task definitions
-  const rejectError = new Error('Rejecting message');
-  const executeOneAsync = sampleExecuteOneAsync(5, undefined, (msg, context) => {
-    // trigger a rejection from inside
-    context.info(`Triggering an internal reject`);
-    msg.taskTracking.ones.Task1.reject('Forcing reject', rejectError, true);
-  });
-  const taskDef1 = TaskDef.defineTask('Task1', executeOneAsync);
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
-    }
+    const context = {};
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const msg = sampleMessage(1);
 
-    promise
-      .then(results => {
-        t.pass(`processStreamEvent must resolve`);
-        const n = 1;
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Rejected, taskStates.CompletedState, context);
-        t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
-        t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
+    const event = sampleKinesisEvent(streamName, undefined, msg, false);
 
-        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
 
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 1, `processStreamEvent results must have ${1} discarded rejected messages`);
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    configureDefaults(t, context, undefined);
 
-        t.end();
-      })
-      .catch(err => {
-        t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
-        t.end(err);
-      });
+    // Setup the task definitions
+    const rejectError = new Error('Rejecting message');
+    const executeOneAsync = sampleExecuteOneAsync(5, undefined, (msg, context) => {
+      // trigger a rejection from inside
+      context.info(`Triggering an internal reject`);
+      msg.taskTracking.ones.Task1.reject('Forcing reject', rejectError, true);
+    });
+    const taskDef1 = TaskDef.defineTask('Task1', executeOneAsync);
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
-  }
-});
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
-test('processStreamEvent with 1 message that rejects, but cannot discard rejected message must fail', t => {
-  const context = {};
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
 
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const msg = sampleMessage(1);
-
-  const event = sampleKinesisEvent(streamName, undefined, msg, false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  const fatalError = new Error('Disabling Kinesis');
-  configureDefaults(t, context, fatalError);
-
-  // Setup the task definitions
-  const rejectError = new Error('Rejecting message');
-  const executeOneAsync = sampleExecuteOneAsync(5, undefined, (msg, context) => {
-    // trigger a rejection from inside
-    context.info(`Triggering an internal reject`);
-    msg.taskTracking.ones.Task1.reject('Forcing reject', rejectError, true);
-  });
-  const taskDef1 = TaskDef.defineTask('Task1', executeOneAsync);
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
-  try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
-
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
-    }
-
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
-
-    promise
-      .then(messages => {
-        const n = messages.length;
-        t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
-        t.end();
-      })
-      .catch(err => {
-        t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
-        t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
-
-        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+      promise
+        .then(results => {
+          t.pass(`processStreamEvent must resolve`);
+          const n = 1;
           const messages = results.messages;
-          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+          checkMessagesTasksStates(t, messages, taskStates.Rejected, taskStates.CompletedState, context);
+          t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
+          t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
           t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
           t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
           t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
-            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
-          }
-          if (results.discardedUnusableRecords) {
-            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-          }
-
-          if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
-            t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
-          }
-          if (results.handledIncompleteMessages) {
-            t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
-          }
-
-          if (results.discardedRejectedMessages || !results.discardRejectedMessagesError) {
-            t.fail(`discardRejectedMessages must fail with ${results.discardRejectedMessagesError}`);
-          }
-          t.equal(results.discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 1, `processStreamEvent results must have ${1} discarded rejected messages`);
 
           t.end();
+        })
+        .catch(err => {
+          t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
+          t.end(err);
         });
-      });
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+});
+
+test('processStreamEvent with 1 message that rejects, but cannot discard rejected message must fail', t => {
+  try {
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
+
+    const context = {};
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const msg = sampleMessage(1);
+
+    const event = sampleKinesisEvent(streamName, undefined, msg, false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    const fatalError = new Error('Disabling Kinesis');
+    configureDefaults(t, context, fatalError);
+
+    // Setup the task definitions
+    const rejectError = new Error('Rejecting message');
+    const executeOneAsync = sampleExecuteOneAsync(5, undefined, (msg, context) => {
+      // trigger a rejection from inside
+      context.info(`Triggering an internal reject`);
+      msg.taskTracking.ones.Task1.reject('Forcing reject', rejectError, true);
+    });
+    const taskDef1 = TaskDef.defineTask('Task1', executeOneAsync);
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(messages => {
+          const n = messages.length;
+          t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
+          t.end();
+        })
+        .catch(err => {
+          t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
+          t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
+
+          streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+            const messages = results.messages;
+            t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+            t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+
+            t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+            t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+            t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+            if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+              t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+            }
+            if (results.discardedUnusableRecords) {
+              t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+            }
+
+            if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
+            }
+            if (results.handledIncompleteMessages) {
+              t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
+            }
+
+            if (results.discardedRejectedMessages || !results.discardRejectedMessagesError) {
+              t.fail(`discardRejectedMessages must fail with ${results.discardRejectedMessagesError}`);
+            }
+            t.equal(results.discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
+
+            t.end();
+          });
+        });
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
 });
 
@@ -1450,339 +1529,357 @@ test('processStreamEvent with 1 message that rejects, but cannot discard rejecte
 // =====================================================================================================================
 
 test('processStreamEvent with 1 message that exceeds max number of attempts on all its tasks - must discard Discarded message', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  configureDefaults(t, context, undefined);
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const msg = sampleMessage(1);
-
-  const maxNumberOfAttempts = streamProcessing.getMaxNumberOfAttempts(context);
-
-  // Add some "history" to this message to give it a no-longer active task that will trigger abandonment of this task
-  const task1Before = Task.createTask(TaskDef.defineTask('Task1', execute1));
-  task1Before.fail(new Error('Previously failed Task1'));
-
-  const task2Before = Task.createTask(TaskDef.defineTask('Task2', execute1));
-  task2Before.fail(new Error('Previously failed Task2'));
-
-  // Push both tasks number of attempts to the brink
-  for (let a = 0; a < maxNumberOfAttempts - 1; ++a) {
-    task1Before.incrementAttempts();
-    task2Before.incrementAttempts();
-  }
-  t.equal(task1Before.attempts, maxNumberOfAttempts - 1, `BEFORE Task1 attempts must be ${maxNumberOfAttempts - 1}`);
-  t.equal(task2Before.attempts, maxNumberOfAttempts - 1, `BEFORE Task2 attempts must be ${maxNumberOfAttempts - 1}`);
-
-  const task1Like = JSON.parse(JSON.stringify(task1Before));
-  const task2Like = JSON.parse(JSON.stringify(task2Before));
-
-  msg.taskTracking = {ones: {'Task1': task1Like}, alls: {'Task2': task2Like}};
-
-  const m = JSON.parse(JSON.stringify(msg));
-  t.ok(m, 'Message with tasks is parsable');
-
-  const task1Revived = m.taskTracking.ones.Task1;
-  t.ok(Task.isTaskLike(task1Revived), `Task1 must be task-like (${stringify(task1Revived)})`);
-  t.deepEqual(task1Revived, task1Like, `Task1 revived must be original Task1 task-like (${stringify(task1Revived)})`);
-
-  const task2Revived = m.taskTracking.alls.Task2;
-  t.ok(Task.isTaskLike(task2Revived), `Task2 must be task-like (${stringify(task2Revived)})`);
-  t.deepEqual(task2Revived, task2Like, `Task2 revived must be original Task2 task-like (${stringify(task2Revived)})`);
-
-  t.equal(task1Revived.attempts, maxNumberOfAttempts - 1, `REVIVED Task1 attempts must be ${maxNumberOfAttempts - 1}`);
-  t.equal(task2Revived.attempts, maxNumberOfAttempts - 1, `REVIVED Task2 attempts must be ${maxNumberOfAttempts - 1}`);
-
-
-  const event = sampleKinesisEvent(streamName, undefined, msg, false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Setup the task definitions
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, new Error('Final failure')));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, new Error('Final failure')));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
+    const context = {};
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    configureDefaults(t, context, undefined);
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const msg = sampleMessage(1);
+
+    const maxNumberOfAttempts = streamProcessing.getMaxNumberOfAttempts(context);
+
+    // Add some "history" to this message to give it a no-longer active task that will trigger abandonment of this task
+    const task1Before = Task.createTask(TaskDef.defineTask('Task1', execute1));
+    task1Before.fail(new Error('Previously failed Task1'));
+
+    const task2Before = Task.createTask(TaskDef.defineTask('Task2', execute1));
+    task2Before.fail(new Error('Previously failed Task2'));
+
+    // Push both tasks number of attempts to the brink
+    for (let a = 0; a < maxNumberOfAttempts - 1; ++a) {
+      task1Before.incrementAttempts();
+      task2Before.incrementAttempts();
     }
+    t.equal(task1Before.attempts, maxNumberOfAttempts - 1, `BEFORE Task1 attempts must be ${maxNumberOfAttempts - 1}`);
+    t.equal(task2Before.attempts, maxNumberOfAttempts - 1, `BEFORE Task2 attempts must be ${maxNumberOfAttempts - 1}`);
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+    const task1Like = JSON.parse(JSON.stringify(task1Before));
+    const task2Like = JSON.parse(JSON.stringify(task2Before));
 
-    promise
-      .then(results => {
-        t.pass(`processStreamEvent must resolve`);
-        const n = 1;
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Discarded, taskStates.Discarded, context);
-        t.equal(messages[0].taskTracking.ones.Task1.attempts, maxNumberOfAttempts, `Task1 attempts must be ${maxNumberOfAttempts}`);
-        t.equal(messages[0].taskTracking.alls.Task2.attempts, maxNumberOfAttempts, `Task2 attempts must be ${maxNumberOfAttempts}`);
+    msg.taskTracking = {ones: {'Task1': task1Like}, alls: {'Task2': task2Like}};
 
-        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+    const m = JSON.parse(JSON.stringify(msg));
+    t.ok(m, 'Message with tasks is parsable');
 
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 1, `processStreamEvent results must have ${1} discarded rejected messages`);
+    const task1Revived = m.taskTracking.ones.Task1;
+    t.ok(Task.isTaskLike(task1Revived), `Task1 must be task-like (${stringify(task1Revived)})`);
+    t.deepEqual(task1Revived, task1Like, `Task1 revived must be original Task1 task-like (${stringify(task1Revived)})`);
 
-        t.end();
-      })
-      .catch(err => {
-        t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
-        t.end(err);
-      });
+    const task2Revived = m.taskTracking.alls.Task2;
+    t.ok(Task.isTaskLike(task2Revived), `Task2 must be task-like (${stringify(task2Revived)})`);
+    t.deepEqual(task2Revived, task2Like, `Task2 revived must be original Task2 task-like (${stringify(task2Revived)})`);
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
-  }
-});
-
-test('processStreamEvent with 1 message that exceeds max number of attempts on all its tasks, but cannot discard message must fail', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  const fatalError = new Error('Disabling Kinesis');
-  configureDefaults(t, context, fatalError);
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const msg = sampleMessage(1);
-
-  const maxNumberOfAttempts = streamProcessing.getMaxNumberOfAttempts(context);
-
-  // Add some "history" to this message to give it a no-longer active task that will trigger abandonment of this task
-  const task1Before = Task.createTask(TaskDef.defineTask('Task1', execute1));
-  task1Before.fail(new Error('Previously failed Task1'));
-
-  const task2Before = Task.createTask(TaskDef.defineTask('Task2', execute1));
-  task2Before.fail(new Error('Previously failed Task2'));
-
-  // Push both tasks number of attempts to the brink
-  for (let a = 0; a < maxNumberOfAttempts - 1; ++a) {
-    task1Before.incrementAttempts();
-    task2Before.incrementAttempts();
-  }
-
-  const task1Like = JSON.parse(JSON.stringify(task1Before));
-  const task2Like = JSON.parse(JSON.stringify(task2Before));
-
-  msg.taskTracking = {ones: {'Task1': task1Like}, alls: {'Task2': task2Like}};
-
-  const m = JSON.parse(JSON.stringify(msg));
-  t.ok(m, 'Message with tasks is parsable');
-
-  const task1Revived = m.taskTracking.ones.Task1;
-  t.ok(Task.isTaskLike(task1Revived), `Task1 must be task-like (${stringify(task1Revived)})`);
-  t.deepEqual(task1Revived, task1Like, `Task1 revived must be original Task1 task-like (${stringify(task1Revived)})`);
-
-  const task2Revived = m.taskTracking.alls.Task2;
-  t.ok(Task.isTaskLike(task2Revived), `Task2 must be task-like (${stringify(task2Revived)})`);
-  t.deepEqual(task2Revived, task2Like, `Task2 revived must be original Task2 task-like (${stringify(task2Revived)})`);
+    t.equal(task1Revived.attempts, maxNumberOfAttempts - 1, `REVIVED Task1 attempts must be ${maxNumberOfAttempts - 1}`);
+    t.equal(task2Revived.attempts, maxNumberOfAttempts - 1, `REVIVED Task2 attempts must be ${maxNumberOfAttempts - 1}`);
 
 
-  const event = sampleKinesisEvent(streamName, undefined, msg, false);
+    const event = sampleKinesisEvent(streamName, undefined, msg, false);
 
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
 
-  // Setup the task definitions
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, new Error('Final failure')));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, new Error('Final failure')));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
+    // Setup the task definitions
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, new Error('Final failure')));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, new Error('Final failure')));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
 
-  // Process the event
-  try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
-    }
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
-    promise
-      .then(results => {
-        const n = results.messages.length;
-        t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
-        t.end();
-      })
-      .catch(err => {
-        t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
-        t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
-
-        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+      promise
+        .then(results => {
+          t.pass(`processStreamEvent must resolve`);
+          const n = 1;
           const messages = results.messages;
-          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+          checkMessagesTasksStates(t, messages, taskStates.Discarded, taskStates.Discarded, context);
+          t.equal(messages[0].taskTracking.ones.Task1.attempts, maxNumberOfAttempts, `Task1 attempts must be ${maxNumberOfAttempts}`);
+          t.equal(messages[0].taskTracking.alls.Task2.attempts, maxNumberOfAttempts, `Task2 attempts must be ${maxNumberOfAttempts}`);
 
           t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
           t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
           t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
 
-          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
-            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
-          }
-          if (results.discardedUnusableRecords) {
-            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-          }
-
-          if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
-            t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
-          }
-          if (results.handledIncompleteMessages) {
-            t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
-          }
-
-          if (results.discardedRejectedMessages || !results.discardRejectedMessagesError) {
-            t.fail(`discardRejectedMessages must fail with ${results.discardRejectedMessagesError}`);
-          }
-          t.equal(results.discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 0, `processStreamEvent results must have ${0} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 1, `processStreamEvent results must have ${1} discarded rejected messages`);
 
           t.end();
+        })
+        .catch(err => {
+          t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
+          t.end(err);
         });
-      });
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+});
+
+test('processStreamEvent with 1 message that exceeds max number of attempts on all its tasks, but cannot discard message must fail', t => {
+  try {
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
+
+    const context = {};
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    const fatalError = new Error('Disabling Kinesis');
+    configureDefaults(t, context, fatalError);
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const msg = sampleMessage(1);
+
+    const maxNumberOfAttempts = streamProcessing.getMaxNumberOfAttempts(context);
+
+    // Add some "history" to this message to give it a no-longer active task that will trigger abandonment of this task
+    const task1Before = Task.createTask(TaskDef.defineTask('Task1', execute1));
+    task1Before.fail(new Error('Previously failed Task1'));
+
+    const task2Before = Task.createTask(TaskDef.defineTask('Task2', execute1));
+    task2Before.fail(new Error('Previously failed Task2'));
+
+    // Push both tasks number of attempts to the brink
+    for (let a = 0; a < maxNumberOfAttempts - 1; ++a) {
+      task1Before.incrementAttempts();
+      task2Before.incrementAttempts();
+    }
+
+    const task1Like = JSON.parse(JSON.stringify(task1Before));
+    const task2Like = JSON.parse(JSON.stringify(task2Before));
+
+    msg.taskTracking = {ones: {'Task1': task1Like}, alls: {'Task2': task2Like}};
+
+    const m = JSON.parse(JSON.stringify(msg));
+    t.ok(m, 'Message with tasks is parsable');
+
+    const task1Revived = m.taskTracking.ones.Task1;
+    t.ok(Task.isTaskLike(task1Revived), `Task1 must be task-like (${stringify(task1Revived)})`);
+    t.deepEqual(task1Revived, task1Like, `Task1 revived must be original Task1 task-like (${stringify(task1Revived)})`);
+
+    const task2Revived = m.taskTracking.alls.Task2;
+    t.ok(Task.isTaskLike(task2Revived), `Task2 must be task-like (${stringify(task2Revived)})`);
+    t.deepEqual(task2Revived, task2Like, `Task2 revived must be original Task2 task-like (${stringify(task2Revived)})`);
+
+
+    const event = sampleKinesisEvent(streamName, undefined, msg, false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Setup the task definitions
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, new Error('Final failure')));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, new Error('Final failure')));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(results => {
+          const n = results.messages.length;
+          t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
+          t.end();
+        })
+        .catch(err => {
+          t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
+          t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
+
+          streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+            const messages = results.messages;
+            t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+            t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+
+            t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+            t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+            t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+            if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+              t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+            }
+            if (results.discardedUnusableRecords) {
+              t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+            }
+
+            if (!results.handledIncompleteMessages || results.handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must not fail with ${results.handleIncompleteMessagesError}`);
+            }
+            if (results.handledIncompleteMessages) {
+              t.equal(results.handledIncompleteMessages.length, 0, `handleIncompleteMessages must have ${0} handled incomplete messages`);
+            }
+
+            if (results.discardedRejectedMessages || !results.discardRejectedMessagesError) {
+              t.fail(`discardRejectedMessages must fail with ${results.discardRejectedMessagesError}`);
+            }
+            t.equal(results.discardRejectedMessagesError, fatalError, `discardedRejectedMessages must fail with ${fatalError}`);
+
+            t.end();
+          });
+        });
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
 });
 
 test('processStreamEvent with 1 message that only exceeds max number of attempts on 1 of its 2 its tasks, must not discard message yet', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  configureDefaults(t, context, undefined);
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const msg = sampleMessage(1);
-
-  const maxNumberOfAttempts = streamProcessing.getMaxNumberOfAttempts(context);
-
-  // Add some "history" to this message to give it a no-longer active task that will trigger abandonment of this task
-  const task1Before = Task.createTask(TaskDef.defineTask('Task1', execute1));
-  task1Before.fail(new Error('Previously failed Task1'));
-
-  const task2Before = Task.createTask(TaskDef.defineTask('Task2', execute1));
-  task2Before.fail(new Error('Previously failed Task2'));
-
-  // Push 1st task's number of attempts to max - 2 (i.e. won't exceed this round)
-  for (let a = 0; a < maxNumberOfAttempts - 2; ++a) {
-    task1Before.incrementAttempts();
-  }
-  // Push 2nd task's number of attempts to max - 1 (will exceed this round
-  for (let a = 0; a < maxNumberOfAttempts - 1; ++a) {
-    task2Before.incrementAttempts();
-  }
-
-  const task1Like = JSON.parse(JSON.stringify(task1Before));
-  const task2Like = JSON.parse(JSON.stringify(task2Before));
-
-  msg.taskTracking = {ones: {'Task1': task1Like}, alls: {'Task2': task2Like}};
-
-  const m = JSON.parse(JSON.stringify(msg));
-  t.ok(m, 'Message with tasks is parsable');
-
-  const task1Revived = m.taskTracking.ones.Task1;
-  t.ok(Task.isTaskLike(task1Revived), `Task1 must be task-like (${stringify(task1Revived)})`);
-  t.deepEqual(task1Revived, task1Like, `Task1 revived must be original Task1 task-like (${stringify(task1Revived)})`);
-
-  const task2Revived = m.taskTracking.alls.Task2;
-  t.ok(Task.isTaskLike(task2Revived), `Task2 must be task-like (${stringify(task2Revived)})`);
-  t.deepEqual(task2Revived, task2Like, `Task2 revived must be original Task2 task-like (${stringify(task2Revived)})`);
-
-
-  const event = sampleKinesisEvent(streamName, undefined, msg, false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 1000;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Setup the task definitions
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, new Error('Final failure')));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, new Error('Final failure')));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
+    const context = {};
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    configureDefaults(t, context, undefined);
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const msg = sampleMessage(1);
+
+    const maxNumberOfAttempts = streamProcessing.getMaxNumberOfAttempts(context);
+
+    // Add some "history" to this message to give it a no-longer active task that will trigger abandonment of this task
+    const task1Before = Task.createTask(TaskDef.defineTask('Task1', execute1));
+    task1Before.fail(new Error('Previously failed Task1'));
+
+    const task2Before = Task.createTask(TaskDef.defineTask('Task2', execute1));
+    task2Before.fail(new Error('Previously failed Task2'));
+
+    // Push 1st task's number of attempts to max - 2 (i.e. won't exceed this round)
+    for (let a = 0; a < maxNumberOfAttempts - 2; ++a) {
+      task1Before.incrementAttempts();
+    }
+    // Push 2nd task's number of attempts to max - 1 (will exceed this round
+    for (let a = 0; a < maxNumberOfAttempts - 1; ++a) {
+      task2Before.incrementAttempts();
     }
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+    const task1Like = JSON.parse(JSON.stringify(task1Before));
+    const task2Like = JSON.parse(JSON.stringify(task2Before));
 
-    promise
-      .then(results => {
-        t.pass(`processStreamEvent must resolve`);
-        const n = 1;
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.Failed, taskStates.Failed, context);
-        t.equal(messages[0].taskTracking.ones.Task1.attempts, maxNumberOfAttempts - 1, `Task1 attempts must be ${maxNumberOfAttempts - 1}`);
-        t.equal(messages[0].taskTracking.alls.Task2.attempts, maxNumberOfAttempts, `Task1 attempts must be ${maxNumberOfAttempts}`);
+    msg.taskTracking = {ones: {'Task1': task1Like}, alls: {'Task2': task2Like}};
 
-        t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+    const m = JSON.parse(JSON.stringify(msg));
+    t.ok(m, 'Message with tasks is parsable');
 
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
+    const task1Revived = m.taskTracking.ones.Task1;
+    t.ok(Task.isTaskLike(task1Revived), `Task1 must be task-like (${stringify(task1Revived)})`);
+    t.deepEqual(task1Revived, task1Like, `Task1 revived must be original Task1 task-like (${stringify(task1Revived)})`);
 
-        t.end();
-      })
-      .catch(err => {
-        t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
-        t.end(err);
-      });
+    const task2Revived = m.taskTracking.alls.Task2;
+    t.ok(Task.isTaskLike(task2Revived), `Task2 must be task-like (${stringify(task2Revived)})`);
+    t.deepEqual(task2Revived, task2Like, `Task2 revived must be original Task2 task-like (${stringify(task2Revived)})`);
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+
+    const event = sampleKinesisEvent(streamName, undefined, msg, false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 1000;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Setup the task definitions
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, new Error('Final failure')));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, new Error('Final failure')));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(results => {
+          t.pass(`processStreamEvent must resolve`);
+          const n = 1;
+          const messages = results.messages;
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+          checkMessagesTasksStates(t, messages, taskStates.Failed, taskStates.Failed, context);
+          t.equal(messages[0].taskTracking.ones.Task1.attempts, maxNumberOfAttempts - 1, `Task1 attempts must be ${maxNumberOfAttempts - 1}`);
+          t.equal(messages[0].taskTracking.alls.Task2.attempts, maxNumberOfAttempts, `Task1 attempts must be ${maxNumberOfAttempts}`);
+
+          t.ok(results.processing.completed, `processStreamEvent processing must be completed`);
+          t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+          t.notOk(results.processing.timedOut, `processStreamEvent processing must not be timed-out`);
+
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
+
+          t.end();
+        })
+        .catch(err => {
+          t.fail(`processStreamEvent should NOT have failed (${stringify(err)})`, err.stack);
+          t.end(err);
+        });
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
 });
 
@@ -1791,159 +1888,171 @@ test('processStreamEvent with 1 message that only exceeds max number of attempts
 // =====================================================================================================================
 
 test('processStreamEvent with 1 message and triggered timeout promise, must resubmit incomplete message', t => {
-  const context = {};
-
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
-
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  configureDefaults(t, context, undefined);
-
-  const n = 1;
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 10;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Setup the task definitions
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(15, undefined));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(15, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
   try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
 
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
-    }
+    const context = {};
 
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    configureDefaults(t, context, undefined);
 
-    promise
-      .then(results => {
-        t.pass(`processStreamEvent must resolve`);
-        const n = 1;
-        const messages = results.messages;
-        t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
-        checkMessagesTasksStates(t, messages, taskStates.TimedOut, taskStates.TimedOut, context);
-        t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
-        t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
+    const n = 1;
 
-        t.notOk(results.processing.completed, `processStreamEvent processing must not be completed`);
-        t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
-        t.ok(results.processing.timedOut, `processStreamEvent processing must be timed-out`);
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
 
-        t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
-        t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
-        t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
-        t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
+    // Generate a sample AWS context
+    const maxTimeInMillis = 10;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
 
-        t.end();
-      })
+    // Setup the task definitions
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(15, undefined));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(15, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
-  }
-});
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
 
-test('processStreamEvent with 1 message and triggered timeout promise, must fail if it cannot resubmit incomplete messages', t => {
-  const context = {};
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
 
-  // Simulate a region in AWS_REGION for testing (if none already exists)
-  const region = setupRegion('us-west-2');
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
 
-  // Simulate ideal conditions - everything meant to be configured beforehand has been configured
-  const fatalError = new Error('Disabling Kinesis');
-  configureDefaults(t, context, fatalError);
-
-  const n = 1;
-
-  // Generate a sample AWS event
-  const streamName = 'TestStream_DEV2';
-  const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
-
-  // Generate a sample AWS context
-  const maxTimeInMillis = 10;
-  const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
-
-  // Setup the task definitions
-  const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(15, undefined));
-  const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(15, undefined));
-  const processOneTaskDefs = [taskDef1];
-  const processAllTaskDefs = [taskDef2];
-
-  // Process the event
-  try {
-    streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
-    const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
-
-    if (Promise.isPromise(promise)) {
-      t.pass(`processStreamEvent returned a promise`);
-    } else {
-      t.fail(`processStreamEvent should have returned a promise`);
-    }
-
-    t.equal(context.region, region, `context.region must be ${region}`);
-    t.equal(context.stage, 'dev1', `context.stage must be dev1`);
-    t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
-
-    promise
-      .then(messages => {
-        const n = messages.length;
-        t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
-        t.end();
-      })
-      .catch(err => {
-        t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
-        t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
-
-        streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+      promise
+        .then(results => {
+          t.pass(`processStreamEvent must resolve`);
+          const n = 1;
           const messages = results.messages;
-          t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
-          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(messages.length, n, `processStreamEvent results must have ${n} messages`);
+          checkMessagesTasksStates(t, messages, taskStates.TimedOut, taskStates.TimedOut, context);
+          t.equal(messages[0].taskTracking.ones.Task1.attempts, 1, `Task1 attempts must be 1`);
+          t.equal(messages[0].taskTracking.alls.Task2.attempts, 1, `Task2 attempts must be 1`);
 
           t.notOk(results.processing.completed, `processStreamEvent processing must not be completed`);
           t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
           t.ok(results.processing.timedOut, `processStreamEvent processing must be timed-out`);
 
-          if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
-            t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
-          }
-          if (results.discardedUnusableRecords) {
-            t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
-          }
-
-          if (results.handledIncompleteMessages || !results.handleIncompleteMessagesError) {
-            t.fail(`handleIncompleteMessages must fail with ${results.handleIncompleteMessagesError}`);
-          }
-          t.equal(results.handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
-
-          if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
-            t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
-          }
-          if (results.discardedRejectedMessages) {
-            t.equal(results.discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
-          }
+          t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+          t.equal(results.discardedUnusableRecords.length, 0, `processStreamEvent results must have ${0} discarded unusable records`);
+          t.equal(results.handledIncompleteMessages.length, 1, `processStreamEvent results must have ${1} handled incomplete records`);
+          t.equal(results.discardedRejectedMessages.length, 0, `processStreamEvent results must have ${0} discarded rejected messages`);
 
           t.end();
+        })
+
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
+});
+
+test('processStreamEvent with 1 message and triggered timeout promise, must fail if it cannot resubmit incomplete messages', t => {
+  try {
+    // Simulate a region in AWS_REGION for testing (if none already exists)
+    const region = setRegionStageAndDeleteCachedInstances('us-west-2', undefined);
+
+    const context = {};
+
+    // Simulate ideal conditions - everything meant to be configured beforehand has been configured
+    const fatalError = new Error('Disabling Kinesis');
+    configureDefaults(t, context, fatalError);
+
+    const n = 1;
+
+    // Generate a sample AWS event
+    const streamName = 'TestStream_DEV2';
+    const event = sampleKinesisEvent(streamName, undefined, sampleMessage(1), false);
+
+    // Generate a sample AWS context
+    const maxTimeInMillis = 10;
+    const awsContext = sampleAwsContext('1.0.1', 'dev1', maxTimeInMillis);
+
+    // Setup the task definitions
+    const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(15, undefined));
+    const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(15, undefined));
+    const processOneTaskDefs = [taskDef1];
+    const processAllTaskDefs = [taskDef2];
+
+    // Process the event
+    try {
+      streamConsumer.configureStreamConsumer(context, undefined, undefined, event, awsContext);
+      const promise = streamConsumer.processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context);
+
+      if (Promise.isPromise(promise)) {
+        t.pass(`processStreamEvent returned a promise`);
+      } else {
+        t.fail(`processStreamEvent should have returned a promise`);
+      }
+
+      t.equal(context.region, region, `context.region must be ${region}`);
+      t.equal(context.stage, 'dev1', `context.stage must be dev1`);
+      t.equal(context.awsContext, awsContext, `context.awsContext must be given awsContext`);
+
+      promise
+        .then(messages => {
+          const n = messages.length;
+          t.fail(`processStreamEvent must NOT resolve with ${n} message(s)`);
+          t.end();
+        })
+        .catch(err => {
+          t.pass(`processStreamEvent must reject with error (${stringify(err)})`);
+          t.equal(err, fatalError, `processStreamEvent error must be ${fatalError}`);
+
+          streamConsumer.awaitStreamConsumerResults(err.streamConsumerResults).then(results => {
+            const messages = results.messages;
+            t.equal(messages.length, 1, `processStreamEvent results must have ${1} messages`);
+            t.equal(results.unusableRecords.length, 0, `processStreamEvent results must have ${0} unusable records`);
+
+            t.notOk(results.processing.completed, `processStreamEvent processing must not be completed`);
+            t.notOk(results.processing.failed, `processStreamEvent processing must not be failed`);
+            t.ok(results.processing.timedOut, `processStreamEvent processing must be timed-out`);
+
+            if (!results.discardedUnusableRecords || results.discardUnusableRecordsError) {
+              t.fail(`discardUnusableRecords must not fail with ${results.discardUnusableRecordsError}`);
+            }
+            if (results.discardedUnusableRecords) {
+              t.equal(results.discardedUnusableRecords.length, 0, `discardUnusableRecords must have ${0} discarded unusable records`);
+            }
+
+            if (results.handledIncompleteMessages || !results.handleIncompleteMessagesError) {
+              t.fail(`handleIncompleteMessages must fail with ${results.handleIncompleteMessagesError}`);
+            }
+            t.equal(results.handleIncompleteMessagesError, fatalError, `handleIncompleteMessages must fail with ${fatalError}`);
+
+            if (!results.discardedRejectedMessages || results.discardRejectedMessagesError) {
+              t.fail(`discardRejectedMessages must not fail with ${results.discardRejectedMessagesError}`);
+            }
+            if (results.discardedRejectedMessages) {
+              t.equal(results.discardedRejectedMessages.length, 0, `discardedRejectedMessages must have ${0} discarded rejected messages`);
+            }
+
+            t.end();
+          });
+
         });
 
-      });
+    } catch (err) {
+      t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
+      t.end(err);
+    }
 
-  } catch (err) {
-    t.fail(`processStreamEvent should NOT have failed in try-catch (${stringify(err)})`, err.stack);
-    t.end(err);
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
   }
 });
