@@ -19,7 +19,6 @@ const Tasks = require('task-utils/tasks');
 const Task = Tasks.Task;
 const taskUtils = require('task-utils/task-utils');
 
-const regions = require("aws-core-utils/regions");
 const stages = require("aws-core-utils/stages");
 const kinesisCache = require("aws-core-utils/kinesis-cache");
 const dynamoDBDocClientCache = require("aws-core-utils/dynamodb-doc-client-cache");
@@ -46,7 +45,7 @@ function setRegionStageAndDeleteCachedInstances(region, stage) {
 }
 
 function deleteCachedInstances() {
-  const region = regions.getRegion();
+  const region = process.env.AWS_REGION;
   kinesisCache.deleteKinesis(region);
   dynamoDBDocClientCache.deleteDynamoDBDocClient(region);
 }

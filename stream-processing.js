@@ -175,8 +175,8 @@ function isStreamProcessingConfigured(context) {
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use to override default options
  * @param {StandardSettings|undefined} [standardSettings] - optional standard settings to use to configure dependencies
  * @param {StandardOptions|undefined} [standardOptions] - optional other options to use to configure dependencies
- * @param {Object|undefined} [event] - the AWS event, which was passed to your lambda
- * @param {Object|undefined} [awsContext] - the AWS context, which was passed to your lambda
+ * @param {AwsEvent|undefined} [event] - the AWS event, which was passed to your lambda
+ * @param {AwsContext|undefined} [awsContext] - the AWS context, which was passed to your lambda
  * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing settings on the given context
  * @returns {StreamProcessing} the given context configured with stream processing settings, stage handling settings and
@@ -223,8 +223,8 @@ function configureStreamProcessing(context, settings, options, standardSettings,
  * @param {StreamProcessingSettings} settings - the stream processing settings to use
  * @param {StandardSettings|undefined} [standardSettings] - optional standard settings to use to configure dependencies
  * @param {StandardOptions|undefined} [standardOptions] - optional standard options to use to configure dependencies
- * @param {Object|undefined} [event] - the AWS event, which was passed to your lambda
- * @param {Object|undefined} [awsContext] - the AWS context, which was passed to your lambda
+ * @param {AwsEvent|undefined} [event] - the AWS event, which was passed to your lambda
+ * @param {AwsContext|undefined} [awsContext] - the AWS context, which was passed to your lambda
  * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings and
  * options, which will override any previously configured stream processing and stage handling settings on the given context
  * @return {StreamProcessing} the context object configured with stream processing (either existing or new) and standard settings
@@ -291,8 +291,8 @@ function resolveStreamType(settings, options) {
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use
  * @param {StandardSettings|undefined} [standardSettings] - optional standard settings to use to configure dependencies
  * @param {StandardOptions|undefined} [standardOptions] - optional standard options to use to configure dependencies
- * @param {Object|undefined} [event] - the AWS event, which was passed to your lambda
- * @param {Object|undefined} [awsContext] - the AWS context, which was passed to your lambda
+ * @param {AwsEvent|undefined} [event] - the AWS event, which was passed to your lambda
+ * @param {AwsContext|undefined} [awsContext] - the AWS context, which was passed to your lambda
  * @param {boolean|undefined} forceConfiguration - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing and stage handling settings on the given context
  * @return {StreamProcessing} the context object configured with Kinesis stream processing settings (either existing or defaults)
@@ -333,8 +333,8 @@ function configureDefaultKinesisStreamProcessing(context, options, standardSetti
  * @param {StreamProcessingOptions|undefined} [options] - optional stream processing options to use
  * @param {StandardSettings|undefined} [standardSettings] - optional standard settings to use to configure dependencies
  * @param {StandardOptions|undefined} [standardOptions] - optional standard options to use to configure dependencies
- * @param {Object|undefined} [event] - the AWS event, which was passed to your lambda
- * @param {Object|undefined} [awsContext] - the AWS context, which was passed to your lambda
+ * @param {AwsEvent|undefined} [event] - the AWS event, which was passed to your lambda
+ * @param {AwsContext|undefined} [awsContext] - the AWS context, which was passed to your lambda
  * @param {boolean|undefined} [forceConfiguration] - whether or not to force configuration of the given settings, which
  * will override any previously configured stream processing and stage handling settings on the given context
  * @return {StreamProcessing} the context object configured with DynamoDB stream processing settings (either existing or defaults)
@@ -567,9 +567,9 @@ function getExtractMessageFromRecordFunction(context) {
  * A default extractMessageFromRecord function that attempts to extract and parse the original JSON message object from
  * the given Kinesis stream event record and returns the message (if parsable) or throws an error (if not).
  *
- * @param {Object} record - a Kinesis stream event record
+ * @param {Record} record - a Kinesis stream event record
  * @param {StreamProcessing} context - the context
- * @return {Object} the message object (if successfully extracted)
+ * @return {Message} the message object (if successfully extracted)
  * @throws {Error} an error if a message could not be successfully extracted from the given record
  */
 function extractJsonMessageFromKinesisRecord(record, context) {
@@ -592,9 +592,9 @@ function extractJsonMessageFromKinesisRecord(record, context) {
  * A default extractMessageFromRecord function that simply returns the given stream event record as the message object
  * (if defined) or throws an error (if not).
  *
- * @param {Object} record - a stream event record
+ * @param {Record} record - a stream event record
  * @param {StreamProcessing} context - the context
- * @return {Object} the message object if defined
+ * @return {Message} the message object if defined
  * @throws {Error} an error if the given stream event record is not defined
  */
 function useStreamEventRecordAsMessage(record, context) {
@@ -620,7 +620,7 @@ function getDiscardUnusableRecordsFunction(context) {
 
 /**
  * Discards all the given unusable stream event records to the DRQ (i.e. Dead Record Queue).
- * @param {Object[]} unusableRecords - the list of unusable records to discard
+ * @param {Record[]} unusableRecords - the list of unusable records to discard
  * @param {StreamProcessing} context - the context to use
  * @return {Promise} a promise that will complete when all of its discard unusable record promises complete
  */
@@ -711,7 +711,7 @@ function getDiscardRejectedMessagesFunction(context) {
 
 /**
  * Routes all the given rejected messages to the DMQ (i.e. Dead Message Queue).
- * @param {Array.<Object>} rejectedMessages the list of rejected messages to discard
+ * @param {Message[]} rejectedMessages the list of rejected messages to discard
  * @param {StreamProcessing} context the context to use
  * @return {Promise}
  */
@@ -861,8 +861,8 @@ function getHandleIncompleteMessagesFunction(context) {
 /**
  * A default handleIncompleteMessages function that attempts to resubmit all of the given incomplete messages back to
  * their source Kinesis stream.
- * @param {Object[]} messages - the entire batch of messages
- * @param {Object[]} incompleteMessages - the incomplete messages to be resubmitted
+ * @param {Message[]} messages - the entire batch of messages
+ * @param {Message[]} incompleteMessages - the incomplete messages to be resubmitted
  * @param {StreamProcessing} context - the context
  * @returns {Promise} a promise that will complete when all of the resubmit incomplete message promises have completed
  */
@@ -930,8 +930,8 @@ function resubmitIncompleteMessagesToKinesis(messages, incompleteMessages, conte
  * messages to trigger a replay of all of the messages in the batch, which is unfortunately the only way to replay
  * incomplete DynamoDB stream event records, because they do not appear to have a putRecord function that would enable
  * resubmission and because sequence is critical for DynamoDB stream events.
- * @param {Object[]} messages - the entire batch of messages
- * @param {Object[]} incompleteMessages - the incomplete messages
+ * @param {Message[]} messages - the entire batch of messages
+ * @param {Message[]} incompleteMessages - the incomplete messages
  * @param {StreamProcessing} context - the context
  * @returns {Promise} a promise that will either reject (if there are any incomplete messages) or resolve successfully (if not)
  */
@@ -982,7 +982,7 @@ function getRecord(message, context) {
  * A default loadTaskTrackingState function that does nothing other than returning the given messages in a Promise,
  * since the default Kinesis stream consumer behaviour is to resubmit incomplete messages along with their task tracking
  * state back to Kinesis, which means no task tracking state needs to be saved externally.
- * @param {Object[]} messages - the entire batch of messages being processed
+ * @param {Message[]} messages - the entire batch of messages being processed
  * @param {StreamProcessing} context - the context to use
  * @returns {Promise.<*>} a promise that will do nothing other than return the given messages
  */
@@ -997,7 +997,7 @@ function skipLoadTaskTrackingState(messages, context) {
  * A default saveTaskTrackingState function that does nothing other than returning the given messages in a Promise,
  * since the default Kinesis stream consumer behaviour is to resubmit incomplete messages along with their task tracking
  * state back to Kinesis, which means no task tracking state needs to be saved externally.
- * @param {Object[]} messages - the entire batch of messages being processed
+ * @param {Message[]} messages - the entire batch of messages being processed
  * @param {StreamProcessing} context - the context to use
  * @returns {Promise.<*>} a promise that will do nothing other than return the given messages
  */

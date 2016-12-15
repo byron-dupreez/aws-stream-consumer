@@ -1,6 +1,6 @@
 {
   "loggingOptions": {
-    "logLevel": "trace",
+    "logLevel": "info",
     "useLevelPrefixes": true,
     "useConsoleTrace": false
   },

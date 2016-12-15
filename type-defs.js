@@ -7,7 +7,7 @@
  * context.
  * @property {string} region - the configured region to use
  * @property {string} stage - the configured stage to use
- * @property {Object} awsContext - the AWS context, which was passed to your lambda
+ * @property {AwsContext} awsContext - the AWS context, which was passed to your lambda
  */
 
 /**
@@ -34,27 +34,27 @@
  *
  * @typedef {StreamProcessingOptions} StreamProcessingSettings
  *
- * @property {function(record: Object, context: StreamConsumerContext): Object} extractMessageFromRecord - a synchronous function that
+ * @property {function(record: Record, context: StreamConsumerContext): Message} extractMessageFromRecord - a synchronous function that
  * will be used to extract a message from a given stream event record, which must accept a record and the given context
  * as arguments and return the extracted message or throw an exception if a message cannot be extracted from the record
  *
- * @property {function(messages: Object[], context: StreamConsumerContext): Promise} loadTaskTrackingState - a function that will
+ * @property {function(messages: Message[], context: StreamConsumerContext): Promise.<Message[]>} loadTaskTrackingState - a function that will
  * be used to load the task tracking state of the entire batch of messages and that must accept: an array of the entire
  * batch of messages and the context
  *
- * @property {function(messages: Object[], context: StreamConsumerContext): Promise} saveTaskTrackingState - a function that will be
+ * @property {function(messages: Message[], context: StreamConsumerContext): Promise} saveTaskTrackingState - a function that will be
  * used to save the task tracking state of the entire batch of messages and that must accept: an array of the entire
  * batch of messages and the context
  *
- * @property {function(messages: Object[], incompleteMessages: Object[], context: StreamConsumerContext): Promise.<*>} handleIncompleteMessages -
+ * @property {function(messages: Message[], incompleteMessages: Message[], context: StreamConsumerContext): Promise.<*>} handleIncompleteMessages -
  * a function that will be used to handle any incomplete messages and that must accept: an array of the entire batch of
  * messages; an array of incomplete messages; and the context and ideally return a promise
  *
- * @property {function(unusableRecords: Object[], context: StreamConsumerContext): Promise} discardUnusableRecords - a function that
+ * @property {function(unusableRecords: Record[], context: StreamConsumerContext): Promise} discardUnusableRecords - a function that
  * will be used to discard any unusable records and that must accept an array of unusable records and the context and
  * ideally return a promise
  *
- * @property {function(rejectedRecords: Object[], context: StreamConsumerContext): Promise} discardRejectedMessages - a function that
+ * @property {function(rejectedMessages: Message[], context: StreamConsumerContext): Promise} discardRejectedMessages - a function that
  * will be used to discard any rejected messages and that must accept an array of rejected messages and the context and
  * ideally return a promise
  */
@@ -83,23 +83,23 @@
 /**
  * @typedef {Object} StreamConsumerResults - the stream consumer results, which are returned when the stream consumer
  * completes successfully
- * @property {Object[]} messages - a list of zero or more successfully extracted message objects
- * @property {Object[]} unusableRecords - a list of zero or more unusable records
+ * @property {Message[]} messages - a list of zero or more successfully extracted message objects
+ * @property {Record[]} unusableRecords - a list of zero or more unusable records
  * @property {Task} processing - a task that tracks the state of the processing phase
  * @property {Task|undefined} [finalising] - a task that tracks the state of the finalising phase
- * @property {Object[]|undefined} [savedMessagesTaskTrackingState] - an optional list of zero or more messages that had their task tracking state successfully saved
- * @property {Object[]|undefined} [handledIncompleteMessages] - an optional list of zero or more successfully handled incomplete messages
- * @property {Object[]|undefined} [discardedUnusableRecords] - an optional list of zero or more successfully discarded unusable records
- * @property {Object[]|undefined} [discardedRejectedMessages] - an optional list of zero or more successfully discarded rejected messages
+ * @property {Message[]|undefined} [savedMessagesTaskTrackingState] - an optional list of zero or more messages that had their task tracking state successfully saved
+ * @property {Message[]|undefined} [handledIncompleteMessages] - an optional list of zero or more successfully handled incomplete messages
+ * @property {Record[]|undefined} [discardedUnusableRecords] - an optional list of zero or more successfully discarded unusable records
+ * @property {Message[]|undefined} [discardedRejectedMessages] - an optional list of zero or more successfully discarded rejected messages
  * @property {Error|undefined} [saveMessagesTaskTrackingStateError] - an optional error with which save messages task tracking state failed
  * @property {Error|undefined} [handleIncompleteMessagesError] - an optional error with which handle incomplete records failed
  * @property {Error|undefined} [discardUnusableRecordsError] - an optional error with which discard unusable records failed
  * @property {Error|undefined} [discardRejectedMessagesError] - an optional error with which discard rejected messages failed
  * @property {boolean|undefined} [partial] - whether these results are partial (i.e. not all available yet) or full results
- * @property {Promise.<Object[]|Error>|undefined} [saveMessagesTaskTrackingStatePromise] - a promise of either a resolved list of zero or more messages that had their task tracking state successfully saved or a rejected error
- * @property {Promise.<Object[]|Error>|undefined} [handleIncompleteMessagesPromise] - a promise of either a resolved list of zero or more successfully handled incomplete records or a rejected error
- * @property {Promise.<Object[]|Error>|undefined} [discardUnusableRecordsPromise] - a promise of either a resolved list of zero or more successfully discarded unusable records or a rejected error
- * @property {Promise.<Object[]|Error>|undefined} [discardRejectedMessagesPromise] - a promise of either a resolved list of zero or more successfully discarded rejected messages or a rejected error
+ * @property {Promise.<Message[]|Error>|undefined} [saveMessagesTaskTrackingStatePromise] - a promise of either a resolved list of zero or more messages that had their task tracking state successfully saved or a rejected error
+ * @property {Promise.<Message[]|Error>|undefined} [handleIncompleteMessagesPromise] - a promise of either a resolved list of zero or more successfully handled incomplete records or a rejected error
+ * @property {Promise.<Record[]|Error>|undefined} [discardUnusableRecordsPromise] - a promise of either a resolved list of zero or more successfully discarded unusable records or a rejected error
+ * @property {Promise.<Message[]|Error>|undefined} [discardRejectedMessagesPromise] - a promise of either a resolved list of zero or more successfully discarded rejected messages or a rejected error
  */
 
 /**
@@ -125,3 +125,10 @@
  * results available at the time of the final error or timeout
  */
 
+/**
+ * @typedef {Object} Message - represents any kind of message object extracted from an AWS stream event record
+ */
+
+/**
+ * @typedef {Object} Record - represents an AWS stream event record
+ */
