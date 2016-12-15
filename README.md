@@ -118,57 +118,84 @@ $ npm i --save aws-stream-consumer
 
 To use the `aws-stream-consumer` module:
 
-* Configure the stream consumer with Kinesis default options
+* Define the tasks that you want to execute on individual messages and/or on the entire batch of messages
+```js
+// Assuming the following example functions are meant to be used during processing:
+function saveMessageToDynamoDB(message, context) { /* ... */ }
+function sendPushNotification(/* ... , */ context) { /* ... */ }
+function sendEmail(/* ... , */ context) { /* ... */ }
+function logMessagesToS3(messages, context) { /* ... */ }
+
+// Import TaskDef
+const taskDefs = require('task-utils/task-defs');
+const TaskDef = taskDefs.TaskDef;
+
+// Example of creating a task definition to be used to process each message independently
+const saveMessageTaskDef = TaskDef.defineTask(saveMessageToDynamoDB.name, saveMessageToDynamoDB);
+
+// Example of adding optional sub-task definition(s) to your task definitions as needed
+saveMessageTaskDef.defineSubTasks([sendPushNotification.name, sendEmail.name]);
+
+// Example of creating a task definition to be used to process the entire batch of messages 
+const logMessagesToS3TaskDef = TaskDef.defineTask(logMessagesToS3.name, logMessagesToS3); // ... with any sub-task definitions needed
+
+const processOneTaskDefs = [saveMessageTaskDef]; // ... and/or more task definitions
+const processAllTaskDefs = [logMessagesToS3TaskDef]; // ... and/or more task definitions
+```
+
+* Generate an AWS Lambda handler function that will configure and process stream events according to the given settings & options
+```js
+const streamConsumer = require('aws-stream-consumer/stream-consumer');
+const logging = require('logging-utils');
+
+// Create a context object
+const context = {}; // ... or your own pre-configured context object
+
+const settings = undefined; // ... or your own settings for custom configuration of any or all logging, stage handling and/or stream processing settings
+const options = require('aws-stream-consumer/default-kinesis-options.json'); // ... or your own options for custom configuration of any or all logging, stage handling, kinesis and/or stream processing options
+
+// Generate an AWS Lambda handler function that will configure and process stream events 
+// according to the given settings & options (and use defaults for optional arguments)
+module.exports.handler = streamConsumer.generateHandlerFunction(context, settings, options, processOneTaskDefs, processAllTaskDefs);
+
+// OR ... with optional arguments included
+module.exports.handler = streamConsumer.generateHandlerFunction(context, settings, options, processOneTaskDefs, processAllTaskDefs, 
+  logging.DEBUG, 'Failed to ...', 'Finished ...');
+```
+
+* ALTERNATIVELY, configure your own AWS Lambda handler function using the following functions:
+  (See stream-consumer/generateHandlerFunction for an example handle function)
+
+  * Configure the stream consumer with Kinesis default options
 ```js
 // Create a context object
 const context = {}; // ... or your own context object
 
 const settings = undefined; // ... or your own settings for custom configuration of any or all logging, stage handling and/or stream processing settings
 const options = require('aws-stream-consumer/default-kinesis-options.json'); // ... or your own options for custom configuration of any or all logging, stage handling, kinesis and/or stream processing options
-const forceConfiguration = false;
 
 // Configure the stream consumer's dependencies and runtime settings
 const streamConsumer = require('aws-stream-consumer/stream-consumer');
-
 streamConsumer.configureStreamConsumer(context, settings, options, awsEvent, awsContext);
 ```
-* Define the tasks that you want to execute on individual messages and/or on the entire batch of messages
+  * Process the AWS Kinesis (or DynamoDB) stream event
 ```js
-const taskDefs = require('task-utils/task-defs');
-const TaskDef = taskDefs.TaskDef;
-
-// Example process (one) individual message task definition
-function saveMessageToDynamoDB(message, context) { /* ... */ }
-const saveMessageTaskDef = TaskDef.defineTask(saveMessageToDynamoDB.name, saveMessageToDynamoDB);
-
-// Add optional sub-task definition(s) to any of your task definitions as needed
-saveMessageTaskDef.defineSubTasks(['sendPushNotification', 'sendEmail']);
-
-// Example process (all) entire batch of messages task definition
-function logMessagesToS3(messages, context) { /* ... */ }
-const logMessagesToS3TaskDef = TaskDef.defineTask(logMessagesToS3.name, logMessagesToS3); // ... with sub-task definitions if needed
-```
-* Process the AWS Kinesis (or DynamoDB) stream event
-```js
-const processOneTaskDefs = [saveMessageTaskDef]; // ... and/or more task definitions
-const processAllTaskDefs = [logMessagesToS3TaskDef]; // ... and/or more task definitions
-
 const streamConsumer = require('aws-stream-consumer/stream-consumer');
-const promise = streamConsumer.processStreamEvent(awsEvent, awsContext, processOneTaskDefs, processAllTaskDefs, context);
+const promise = streamConsumer.processStreamEvent(awsEvent, processOneTaskDefs, processAllTaskDefs, context);
 ```
-* Within your custom task execute function(s), update the message's (or messages') tasks' and/or sub-tasks' states
-   * Example custom "process one" task execute function for processing a single, individual message at a time
+  * Within your custom task execute function(s), update the message's (or messages') tasks' and/or sub-tasks' states
+    * Example custom "process one" task execute function for processing a single, individual message at a time
 ```js
 function saveMessageToDynamoDB(message, context) {
   // Note that 'this' will be the currently executing task witin your custom task execute function
   const task = this; 
-  const subTask = task.getSubTask('sendPushNotification');
+  const subTask = task.getSubTask(sendPushNotification.name);
   
   // ... or alternatively from anywhere in the flow of your custom execute code
   const task1 = streamConsumer.getProcessOneTask(message, saveMessageToDynamoDB.name, context);
-  const subTask1 = task1.getSubTask('sendPushNotification');
+  const subTask1 = task1.getSubTask(sendPushNotification.name);
   
-  const subTask2 = task1.getSubTask('sendEmail');
+  const subTask2 = task1.getSubTask(sendEmail.name);
   
   // ...
   
@@ -186,7 +213,7 @@ function saveMessageToDynamoDB(message, context) {
   // ...
 }
 ```
-   * Example custom "process all" task execute function for processing the entire batch of messages
+    * Example custom "process all" task execute function for processing the entire batch of messages
 ```js
 function logMessagesToS3(messages, context) {
   // Note that 'this' will be the currently executing master task witin your custom task execute function
@@ -230,6 +257,7 @@ function logMessagesToS3(messages, context) {
 ```js
 // Configure logging
 const logging = require('logging-utils');
+const forceConfiguration = false;
 // EITHER - configure with your own custom logging settings and/or logging options
 logging.configureLogging(context, loggingSettings, loggingOptions, undefined, forceConfiguration); 
 
