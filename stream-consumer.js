@@ -11,6 +11,8 @@ const isNotBlank = Strings.isNotBlank;
 // const trim = Strings.trim;
 const stringify = Strings.stringify;
 
+const Objects = require('core-functions/objects');
+
 const Arrays = require('core-functions/arrays');
 require('core-functions/promises');
 
@@ -131,9 +133,9 @@ function configureStreamConsumer(context, settings, options, event, awsContext) 
 /**
  * Generates a handler function for your Stream Consumer Lambda.
  *
- * @param {Object|StreamConsumerContext|StreamProcessing|StandardContext} context - the context onto which to configure stream consumer settings
- * @param {StreamConsumerSettings|undefined} [settings] - optional stream consumer settings to use
- * @param {StreamConsumerOptions|undefined} [options] - optional stream consumer options to use
+ * @param {Object|StreamConsumerContext|StreamProcessing|StandardContext|undefined} [moduleScopeContext] - an optional module-scope context from which to copy an initial stream consumer context onto which to configure stream consumer settings
+ * @param {StreamConsumerSettings|undefined} [moduleScopeSettings] - optional module-scoped stream consumer settings from which to copy initial stream consumer settings to use to configure a stream consumer context
+ * @param {StreamConsumerOptions|undefined} [moduleScopeOptions] - optional module-scoped stream consumer options from which to copy initial stream consumer options to use to configure a stream consumer context
  * @param {TaskDef[]|undefined} [processOneTaskDefsOrNone] - an "optional" list of "processOne" task definitions that
  * will be used to generate the tasks to be executed on each message independently
  * @param {TaskDef[]|undefined} [processAllTaskDefsOrNone] - an "optional" list of "processAll" task definitions that
@@ -144,7 +146,7 @@ function configureStreamConsumer(context, settings, options, event, awsContext) 
  * @param {string|undefined} [successMsg] an optional message to log at info level on success
  * @returns {AwsLambdaHandlerFunction} a handler function for your stream consumer Lambda
  */
-function generateHandlerFunction(context, settings, options, processOneTaskDefsOrNone, processAllTaskDefsOrNone, logEventResultAtLogLevel, failureMsg, successMsg) {
+function generateHandlerFunction(moduleScopeContext, moduleScopeSettings, moduleScopeOptions, processOneTaskDefsOrNone, processAllTaskDefsOrNone, logEventResultAtLogLevel, failureMsg, successMsg) {
   /**
    * A stream consumer Lambda handler function.
    * @param {AwsEvent} event - the AWS stream event passed to your handler
@@ -152,7 +154,11 @@ function generateHandlerFunction(context, settings, options, processOneTaskDefsO
    * @param {Callback} callback - the AWS Lambda callback function passed to your handler
    */
   function handler(event, awsContext, callback) {
+    const context = moduleScopeContext && typeof moduleScopeContext === 'object' ? Objects.copy(moduleScopeContext, true) : {};
     try {
+      const settings = moduleScopeSettings && typeof moduleScopeSettings === 'object' ? Objects.copy(moduleScopeSettings, true) : undefined;
+      const options = moduleScopeOptions && typeof moduleScopeOptions === 'object' ? Objects.copy(moduleScopeOptions, true) : undefined;
+
       // Configure the context as a stream consumer context
       configureStreamConsumer(context, settings, options, event, awsContext);
 
@@ -175,14 +181,14 @@ function generateHandlerFunction(context, settings, options, processOneTaskDefsO
           // Log the error encountered
           context.error(isNotBlank(failureMsg) ? failureMsg : 'Failed to process stream event', err.stack);
           // Fail the Lambda callback
-          callback(err);
+          callback(err, null);
         });
 
     } catch (err) {
       // Log the error encountered
       (context.error ? context.error : console.error)(isNotBlank(failureMsg) ? failureMsg : 'Failed to process stream event', err.stack);
       // Fail the Lambda callback
-      callback(err);
+      callback(err, null);
     }
   }
 

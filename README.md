@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.17
+# aws-stream-consumer v1.0.0-beta.18
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -343,6 +343,13 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.0-beta.18
+- Fixed critical module-scope defects in `generateHandlerFunction` function in `stream-consumer` module
+- Updated `core-functions` dependency to version 2.0.14
+- Updated `logging-utils` dependency to version 3.0.12
+- Updated `task-utils` dependency to version 4.0.7
+- Updated `aws-core-utils` dependency to version 5.0.17
 
 ### 1.0.0-beta.17
 - Added new `generateHandlerFunction` function to `stream-consumer.js` module
