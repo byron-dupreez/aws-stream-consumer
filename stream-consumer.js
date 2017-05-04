@@ -1107,7 +1107,9 @@ function finaliseMessageProcessing(messages, unusableRecords, discardUnusableRec
   // Set a timeout to trigger at the last half a second, which will hopefully give us a enough time to complete all of
   // the message finalising before the Lambda runs out of time to execute
   const cancellable = {};
-  const timeoutMs = Math.min(500, calculateTimeoutMs(context.streamProcessing.timeoutAtPercentageOfRemainingTime, context));
+  const timeoutAtPercentage = calculateTimeoutMs(context.streamProcessing.timeoutAtPercentageOfRemainingTime, context);
+  const lastSec = Math.max(context.awsContext.getRemainingTimeInMillis() - 1000, 0);
+  const timeoutMs = Math.max(lastSec, timeoutAtPercentage);
   const timeoutPromise = createTimeoutPromise(finalisingTask, timeoutMs, cancellable, context);
 
   // Create a finalised promise that will ONLY complete when every one of the other finalising promises resolve

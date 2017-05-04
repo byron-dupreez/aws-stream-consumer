@@ -344,6 +344,10 @@ See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) f
 
 ## Changes
 
+### 1.0.0
+- Back ported patch for finalising timeout issue
+- Locked down versions in `package.json`
+ 
 ### 1.0.0-beta.18
 - Fixed critical module-scope defects in `generateHandlerFunction` function in `stream-consumer` module
 - Updated `core-functions` dependency to version 2.0.14
