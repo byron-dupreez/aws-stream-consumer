@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.0-beta.18
+# aws-stream-consumer v1.0.1
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -343,6 +343,9 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.1
+- Updated `aws-core-utils` dependency to version 5.0.19
 
 ### 1.0.0
 - Back ported patch for finalising timeout issue
