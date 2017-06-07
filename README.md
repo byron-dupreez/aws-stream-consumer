@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.3
+# aws-stream-consumer v1.0.4
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -343,6 +343,12 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.4
+- Changed `executeUpdateStateAndReturnPromise` function returned by `taskExecutePromiseFactory` function of the 
+  `stream-consumer` module:
+  - To look for a `context` in the last argument position - instead of only in 2nd argument position
+  - To allow the default recursive starting of a task's sub-tasks to be disabled via `context.streamProcessing.startTasksNonRecursively`
 
 ### 1.0.3
 - Updated `aws-core-utils` dependency to version 5.0.21
