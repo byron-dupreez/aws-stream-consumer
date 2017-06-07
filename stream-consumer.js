@@ -809,7 +809,9 @@ function executeProcessAllTask(task, messages, context) {
  * An override task execute factory function that on invocation will return a task execute function that wraps the given
  * task's original execute function and supplements and alters its execution behaviour as follows:
  * - If the task is already fully finalised, then does nothing (other than logging a warning); otherwise:
- *   - First increments the number of attempts on the task (and recursively on all of its sub-tasks).
+ *   - First starts the task, which increments its number of attempts & sets its last executed at date-time, EITHER
+ *     recursively (default behaviour) on all of its sub-tasks too OR non-recursively (if context.streamProcessing.
+ *     startTasksNonRecursively is true) i.e. on NONE of its sub-tasks.
  *   - Next executes the task's actual, original execute function on the task and then based on the outcome:
  *     - If the execute function completes successfully, updates the task's result with the result obtained and also
  *       sets its state to Succeeded, but ONLY if the task is still in an Unstarted state.
@@ -824,20 +826,25 @@ function executeProcessAllTask(task, messages, context) {
 function taskExecutePromiseFactory(task, execute) {
   /**
    * Returns an execute function that must accept either one message or all messages as its first argument and a context
-   * as its second argument, will execute the task's original execute function and return a resolved or rejected Promise
+   * as its last argument, will execute the task's original execute function and return a resolved or rejected Promise
    * containing the result obtained or error encountered.
+   * @param {boolean|undefined} [context.streamProcessing.startTasksNonRecursively]
    * @returns {Promise.<*>} a promise containing the result obtained or error encountered
    */
   function executeUpdateStateAndReturnPromise() {
-    // Use the context in the second argument for logging if available
-    const context = arguments.length > 1 ? arguments[1] : undefined;
-    const logger = context ? context : console;
+    // Use the context in the last argument for logging if available
+    const n = arguments.length;
+    const context = n > 0 ? arguments[n - 1] : undefined;
+    const logger = context && typeof context.error === 'function' ? context : console;
 
     if (!task.isFullyFinalised()) {
-      // First increment the number of attempts on this task (and all of its sub-tasks recursively), since its starting
-      // to execute
-      task.incrementAttempts(true);
-      task.updateLastExecutedAt(new Date(), true);
+      // First starts the task, which increments its number of attempts & sets its last executed at date-time, either
+      // recursively (default behaviour) or non-recursively (if context.streamProcessing.
+      // startTasksNonRecursively is true)
+      const startTasksNonRecursively = context && context.streamProcessing ?
+        context.streamProcessing.startTasksNonRecursively : false;
+
+      task.start(new Date(), !startTasksNonRecursively);
 
       // Then execute the actual execute function
       try {
