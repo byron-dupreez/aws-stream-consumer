@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.5
+# aws-stream-consumer v1.0.6
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -154,12 +154,15 @@ const context = {}; // ... or your own pre-configured context object
 const settings = undefined; // ... or your own settings for custom configuration of any or all logging, stage handling and/or stream processing settings
 const options = require('aws-stream-consumer/default-kinesis-options.json'); // ... or your own options for custom configuration of any or all logging, stage handling, kinesis and/or stream processing options
 
+function generateProcessOneTaskDefs() { return []; } // TODO add zero or more "process one" task definitions
+function generateProcessAllTaskDefs() { return []; } // TODO add zero of more "process all" task definitions
+
 // Generate an AWS Lambda handler function that will configure and process stream events 
 // according to the given settings & options (and use defaults for optional arguments)
-module.exports.handler = streamConsumer.generateHandlerFunction(context, settings, options, processOneTaskDefs, processAllTaskDefs);
+module.exports.handler = streamConsumer.generateHandlerFunction(context, settings, options, generateProcessOneTaskDefs, generateProcessAllTaskDefs);
 
 // OR ... with optional arguments included
-module.exports.handler = streamConsumer.generateHandlerFunction(context, settings, options, processOneTaskDefs, processAllTaskDefs, 
+module.exports.handler = streamConsumer.generateHandlerFunction(context, settings, options, generateProcessOneTaskDefs, generateProcessAllTaskDefs, 
   logging.DEBUG, 'Failed to ...', 'Finished ...');
 ```
 
@@ -343,6 +346,14 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.6
+- Critical fixes to `aws-stream-consumer` module to avoid shared state bugs with `processOneTaskDefsOrNone` & 
+  `processAllTaskDefsOrNone` parameters
+  - Replaced problematic, shared state `processOneTaskDefsOrNone` & `processAllTaskDefsOrNone` parameters of the 
+    `generateHandlerFunction` function with new optional `generateProcessOneTaskDefs` and `generateProcessAllTaskDefs` 
+    function parameters, which are used to generate clean, unshared lists of "process one" and "process all" task 
+    definitions for each new run
 
 ### 1.0.5
 - Updated `task-utils` dependency to version 4.0.8

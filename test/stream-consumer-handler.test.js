@@ -187,8 +187,8 @@ test('generateHandlerFunction simulating successful result', t => {
     // Setup the task definitions
     const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, undefined));
     const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-    const processOneTaskDefs = [taskDef1];
-    const processAllTaskDefs = [taskDef2];
+    const generateProcessOneTaskDefs = () => [taskDef1];
+    const generateProcessAllTaskDefs = () => [taskDef2];
 
     // Create a context and configure it with a dummy Kinesis instance
     const context = {};
@@ -197,7 +197,7 @@ test('generateHandlerFunction simulating successful result', t => {
 
     // Create a sample AWS Lambda handler function
     const handler = streamConsumer.generateHandlerFunction(context, undefined, require('../default-kinesis-options.json'),
-      processOneTaskDefs, processAllTaskDefs, logging.INFO, 'Failed to process test stream event', 'Processed test stream event');
+      generateProcessOneTaskDefs, generateProcessAllTaskDefs, logging.INFO, 'Failed to process test stream event', 'Processed test stream event');
 
     // Wrap the callback-based AWS Lambda handler function as a Promise returning function purely for testing purposes
     const handlerWithPromise = Promise.wrap(handler);
@@ -247,8 +247,8 @@ test('generateHandlerFunction simulating failure', t => {
     const taskError = new Error('Planned task failure');
     const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, taskError));
     const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-    const processOneTaskDefs = [taskDef1];
-    const processAllTaskDefs = [taskDef2];
+    const generateProcessOneTaskDefs = () => [taskDef1];
+    const generateProcessAllTaskDefs = () => [taskDef2];
 
     // Create a context and configure it with a dummy Kinesis instance
     const context = {};
@@ -257,7 +257,7 @@ test('generateHandlerFunction simulating failure', t => {
 
     // Create a sample AWS Lambda handler function
     const handler = streamConsumer.generateHandlerFunction(context, undefined, require('../default-kinesis-options.json'),
-      processOneTaskDefs, processAllTaskDefs, logging.DEBUG, 'Failed to process test stream event', 'Processed test stream event');
+      generateProcessOneTaskDefs, generateProcessAllTaskDefs, logging.DEBUG, 'Failed to process test stream event', 'Processed test stream event');
 
     // Wrap the callback-based AWS Lambda handler function as a Promise returning function purely for testing purposes
     const handlerWithPromise = Promise.wrap(handler);
@@ -307,8 +307,8 @@ test('generateHandlerFunction simulating failure during configuration with missi
     const taskError = new Error('Planned task failure');
     const taskDef1 = TaskDef.defineTask('Task1', sampleExecuteOneAsync(5, taskError));
     const taskDef2 = TaskDef.defineTask('Task2', sampleExecuteAllAsync(5, undefined));
-    const processOneTaskDefs = [taskDef1];
-    const processAllTaskDefs = [taskDef2];
+    const generateProcessOneTaskDefs = () => [taskDef1];
+    const generateProcessAllTaskDefs = () => [taskDef2];
 
     // Create a context and configure it with a dummy Kinesis instance
     const context = {};
@@ -317,7 +317,7 @@ test('generateHandlerFunction simulating failure during configuration with missi
 
     // Create a sample AWS Lambda handler function
     const handler = streamConsumer.generateHandlerFunction(context, undefined, require('../default-kinesis-options.json'),
-      processOneTaskDefs, processAllTaskDefs, logging.DEBUG, 'Failed to process test stream event', 'Processed test stream event');
+      generateProcessOneTaskDefs, generateProcessAllTaskDefs, logging.DEBUG, 'Failed to process test stream event', 'Processed test stream event');
 
     // Wrap the callback-based AWS Lambda handler function as a Promise returning function purely for testing purposes
     const handlerWithPromise = Promise.wrap(handler);

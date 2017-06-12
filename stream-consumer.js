@@ -133,20 +133,18 @@ function configureStreamConsumer(context, settings, options, event, awsContext) 
 /**
  * Generates a handler function for your Stream Consumer Lambda.
  *
- * @param {Object|StreamConsumerContext|StreamProcessing|StandardContext|undefined} [moduleScopeContext] - an optional module-scope context from which to copy an initial stream consumer context onto which to configure stream consumer settings
- * @param {StreamConsumerSettings|undefined} [moduleScopeSettings] - optional module-scoped stream consumer settings from which to copy initial stream consumer settings to use to configure a stream consumer context
- * @param {StreamConsumerOptions|undefined} [moduleScopeOptions] - optional module-scoped stream consumer options from which to copy initial stream consumer options to use to configure a stream consumer context
- * @param {TaskDef[]|undefined} [processOneTaskDefsOrNone] - an "optional" list of "processOne" task definitions that
- * will be used to generate the tasks to be executed on each message independently
- * @param {TaskDef[]|undefined} [processAllTaskDefsOrNone] - an "optional" list of "processAll" task definitions that
- * will be used to generate the tasks to be executed on all of the event's messages collectively
+ * @param {Object|StreamConsumerContext|StreamProcessing|StandardContext|undefined} [initContext] - an optional initial module-scope context from which to copy an initial stream consumer context onto which to configure stream consumer settings
+ * @param {StreamConsumerSettings|undefined} [initSettings] - optional initial module-scoped stream consumer settings from which to copy initial stream consumer settings to use to configure a stream consumer context
+ * @param {StreamConsumerOptions|undefined} [initOptions] - optional initial module-scoped stream consumer options from which to copy initial stream consumer options to use to configure a stream consumer context
+ * @param {function(): TaskDef[]|undefined} [generateProcessOneTaskDefs] - an "optional" function that must generate a new list of "processOne" task definitions, which will be subsequently used to generate the tasks to be executed on each message independently
+ * @param {function(): TaskDef[]|undefined} [generateProcessAllTaskDefs] - an "optional" function that must generate a new list of "processAll" task definitions, which will be subsequently used to generate the tasks to be executed on all of the event's messages collectively
  * @param {string|undefined} [logEventResultAtLogLevel] - an optional log level at which to log the AWS stream event
  * and result; if log level is undefined or invalid, then logs neither
  * @param {string|undefined} [failureMsg] - an optional message to log at error level on failure
  * @param {string|undefined} [successMsg] an optional message to log at info level on success
  * @returns {AwsLambdaHandlerFunction} a handler function for your stream consumer Lambda
  */
-function generateHandlerFunction(moduleScopeContext, moduleScopeSettings, moduleScopeOptions, processOneTaskDefsOrNone, processAllTaskDefsOrNone, logEventResultAtLogLevel, failureMsg, successMsg) {
+function generateHandlerFunction(initContext, initSettings, initOptions, generateProcessOneTaskDefs, generateProcessAllTaskDefs, logEventResultAtLogLevel, failureMsg, successMsg) {
   /**
    * A stream consumer Lambda handler function.
    * @param {AwsEvent} event - the AWS stream event passed to your handler
@@ -154,10 +152,10 @@ function generateHandlerFunction(moduleScopeContext, moduleScopeSettings, module
    * @param {Callback} callback - the AWS Lambda callback function passed to your handler
    */
   function handler(event, awsContext, callback) {
-    const context = moduleScopeContext && typeof moduleScopeContext === 'object' ? Objects.copy(moduleScopeContext, true) : {};
+    const context = initContext && typeof initContext === 'object' ? Objects.copy(initContext, true) : {};
     try {
-      const settings = moduleScopeSettings && typeof moduleScopeSettings === 'object' ? Objects.copy(moduleScopeSettings, true) : undefined;
-      const options = moduleScopeOptions && typeof moduleScopeOptions === 'object' ? Objects.copy(moduleScopeOptions, true) : undefined;
+      const settings = initSettings && typeof initSettings === 'object' ? Objects.copy(initSettings, true) : undefined;
+      const options = initOptions && typeof initOptions === 'object' ? Objects.copy(initOptions, true) : undefined;
 
       // Configure the context as a stream consumer context
       configureStreamConsumer(context, settings, options, event, awsContext);
@@ -166,7 +164,10 @@ function generateHandlerFunction(moduleScopeContext, moduleScopeSettings, module
       log('Event: ', event, logEventResultAtLogLevel, context);
 
       // Process the stream event with the given process one and/or process all task definitions
-      processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsOrNone, context)
+      const processOneTaskDefs = typeof generateProcessOneTaskDefs === 'function' ? generateProcessOneTaskDefs() : [];
+      const processAllTaskDefs = typeof generateProcessAllTaskDefs === 'function' ? generateProcessAllTaskDefs() : [];
+
+      processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context)
         .then(result => {
           // Optionally log the result at the given log level
           log('Result: ', result, logEventResultAtLogLevel, context);
