@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.4
+# aws-stream-consumer v1.0.5
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -343,6 +343,12 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.5
+- Updated `task-utils` dependency to version 4.0.8
+- Changes to `aws-stream-consumer` module:
+  - Changed `discardIncompleteTasksIfMaxAttemptsExceeded` function to abandon any "dead" unusable & unstarted tasks and 
+    sub-tasks that would otherwise block their fully finalised and/or unusable root tasks from completing
 
 ### 1.0.4
 - Changed `executeUpdateStateAndReturnPromise` function returned by `taskExecutePromiseFactory` function of the 

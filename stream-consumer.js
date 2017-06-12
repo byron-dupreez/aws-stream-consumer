@@ -621,11 +621,11 @@ function executeProcessOneTasks(message, processOneTaskDefs, context) {
   // Replaces all of the old processOne task-like objects with new tasks created from the given processOneTaskDefs and
   // updates these new tasks with information from the old ones
   const processOneTasksByName = getProcessOneTasksByName(message, context);
-  const newTasksAndAbandonedTasks = taskUtils.replaceTasksWithNewTasksUpdatedFromOld(processOneTasksByName, processOneTaskDefs);
-  const newTasks = newTasksAndAbandonedTasks[0];
-  //const abandonedTasks = newTasksAndAbandonedTasks[1];
+  const activeAndUnusableTasks = taskUtils.replaceTasksWithNewTasksUpdatedFromOld(processOneTasksByName, processOneTaskDefs);
+  const activeTasks = activeAndUnusableTasks[0];
+  // const unusableTasks = activeAndUnusableTasks[1];
 
-  const incompleteTasks = newTasks.filter(task => !task.isFullyFinalised());
+  const incompleteTasks = activeTasks.filter(task => !task.isFullyFinalised());
 
   // Check whether the caller provided processOneTaskDefs to use or not
   if (processOneTaskDefs.length <= 0 || incompleteTasks.length <= 0) {
@@ -705,9 +705,9 @@ function executeProcessAllTasks(messages, processAllTaskDefs, context) {
   // processAllTaskDefs and updates these new tasks with information from the old ones
   const messagesWithIncompleteTasks = messages.map(message => {
     const processAllTasksByName = getProcessAllTasksByName(message, context);
-    const newTasksAndAbandonedTasks = taskUtils.replaceTasksWithNewTasksUpdatedFromOld(processAllTasksByName, processAllTaskDefs);
-    const newTasks = newTasksAndAbandonedTasks[0];
-    //const abandonedTasks = newTasksAndAbandonedTasks[1];
+    const activeAndUnusableTasks = taskUtils.replaceTasksWithNewTasksUpdatedFromOld(processAllTasksByName, processAllTaskDefs);
+    const newTasks = activeAndUnusableTasks[0];
+    // const unusableTasks = activeAndUnusableTasks[1];
 
     const incompleteTasks = newTasks.filter(task => !task.isFullyFinalised());
     return [message, incompleteTasks];
@@ -1290,6 +1290,33 @@ function discardIncompleteTasksIfMaxAttemptsExceeded(message, context) {
   // Check if the number of attempts at each of the messages's tasks have all exceeded the maximum number of attempts allowed
   const maxNumberOfAttempts = context.streamProcessing.maxNumberOfAttempts;
 
+  // Find any "dead" unusable & unstarted tasks and sub-tasks that would otherwise block their fully finalised and/or
+  // unusable root tasks from completing
+  const unusableTasks = allTasksAndSubTasks.filter(t => t.unusable && t.unstarted);
+  const deadTasks = unusableTasks.filter(t =>  {
+    const rootTask = Task.getRootTask(t);
+    return rootTask ? rootTask.isFullyFinalisedOrUnusable() : true;
+  });
+
+  // function isUsableParentFullyFinalisedOrUnusable(task) {
+  //   const parent = task ? task.parent : undefined;
+  //   return parent ? (!parent.unusable && parent.isFullyFinalisedOrUnusable()) ||
+  //     (parent.unusable && isUsableParentFullyFinalisedOrUnusable(parent)) : false;
+  // }
+  //
+  // const deadTasks = unusableTasks.filter(isUsableParentFullyFinalisedOrUnusable)
+
+  // Abandon any "dead" unusable & unstarted tasks and sub-tasks that would otherwise block their fully finalised and/or
+  // unusable root tasks from completing
+  deadTasks.forEach(t => {
+    if (!t.finalised) {
+      context.trace(`Abandoned dead ${t.unusable ? 'unusable' : 'usable'} ${t.parent ? 'sub-' : ''}task (${t.name}) in state (${JSON.stringify(t.state)}), since its root task is fully finalised and/or unusable`);
+      const reason = `Abandoned dead ${t.unusable ? 'unusable' : 'usable'} ${t.parent ? 'sub-' : ''}task, since its root task is fully finalised and/or unusable`;
+      t.abandon(reason, undefined, true);
+    }
+  });
+
+  // Now check if any incomplete (unfinalised) tasks still remain
   const incompleteTasks = allTasksAndSubTasks.filter(t => !t.finalised);
   if (incompleteTasks.length <= 0) {
     return false;
