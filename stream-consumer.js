@@ -163,10 +163,15 @@ function generateHandlerFunction(initContext, initSettings, initOptions, generat
       // Optionally log the event at the given log level
       log('Event: ', event, logEventResultAtLogLevel, context);
 
-      // Process the stream event with the given process one and/or process all task definitions
-      const processOneTaskDefs = typeof generateProcessOneTaskDefs === 'function' ? generateProcessOneTaskDefs() : [];
-      const processAllTaskDefs = typeof generateProcessAllTaskDefs === 'function' ? generateProcessAllTaskDefs() : [];
+      // Generate the process one and/or process all task definitions using the given functions
+      // NB: Restored UNSAFE fallback to use of `generateProcessOneTaskDefs` & `generateProcessAllTaskDefs` as arrays
+      // for BACKWARD COMPATIBILITY ONLY! Do NOT pass as arrays in NEW code & refactor OLD code to use functions ASAP!
+      const processOneTaskDefs = typeof generateProcessOneTaskDefs === 'function' ? generateProcessOneTaskDefs() :
+        Array.isArray(generateProcessOneTaskDefs) ? generateProcessOneTaskDefs : [];
+      const processAllTaskDefs = typeof generateProcessAllTaskDefs === 'function' ? generateProcessAllTaskDefs() :
+        Array.isArray(generateProcessAllTaskDefs) ? generateProcessAllTaskDefs : [];
 
+      // Process the stream event with the generated process one and/or process all task definitions
       processStreamEvent(event, processOneTaskDefs, processAllTaskDefs, context)
         .then(result => {
           // Optionally log the result at the given log level

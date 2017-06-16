@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.7
+# aws-stream-consumer v1.0.8
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -346,6 +346,12 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.8
+- Changes to inner `handler` function of `generateHandlerFunction` function of `stream-consumer` module:
+  - Restored UNSAFE fallback to use of `generateProcessOneTaskDefs` & `generateProcessAllTaskDefs` parameters as arrays 
+    for BACKWARD COMPATIBILITY ONLY! Do NOT pass as arrays in NEW code & refactor OLD code to use functions ASAP!
+- Updated `task-utils` dependency to version 4.0.10
 
 ### 1.0.7
 - Updated `task-utils` dependency to version 4.0.9
