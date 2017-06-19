@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.10
+# aws-stream-consumer v1.0.11
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -118,34 +118,41 @@ $ npm i --save aws-stream-consumer
 
 To use the `aws-stream-consumer` module:
 
-* Define the tasks that you want to execute on individual messages and/or on the entire batch of messages
 ```js
-// Assuming the following example functions are meant to be used during processing:
-function saveMessageToDynamoDB(message, context) { /* ... */ }
-function sendPushNotification(/* ... , */ context) { /* ... */ }
-function sendEmail(/* ... , */ context) { /* ... */ }
-function logMessagesToS3(messages, context) { /* ... */ }
+// ---------------------------------------------------------------------------------------------------------------------
+// Define the tasks that you want to execute on individual messages and/or on the entire batch of messages
+// ---------------------------------------------------------------------------------------------------------------------
 
 // Import TaskDef
 const taskDefs = require('task-utils/task-defs');
 const TaskDef = taskDefs.TaskDef;
 
-// Example of creating a task definition to be used to process each message independently
-const saveMessageTaskDef = TaskDef.defineTask(saveMessageToDynamoDB.name, saveMessageToDynamoDB);
+// Define a function that will generate any new process "one at a time" task definition(s) needed
+function generateProcessOneTaskDefs() { 
+  // Example of creating a task definition to be used to process each message one at a time
+  const saveMessageTaskDef = TaskDef.defineTask(saveMessageToDynamoDB.name, saveMessageToDynamoDB);
+  
+  // Example of adding optional sub-task definition(s) to your task definitions as needed
+  saveMessageTaskDef.defineSubTask(sendPushNotification.name, sendPushNotification);
+  saveMessageTaskDef.defineSubTask(sendEmail.name, sendEmail);
+  return [saveMessageTaskDef];  // ... and/or more task definitions
+}
 
-// Example of adding optional sub-task definition(s) to your task definitions as needed
-saveMessageTaskDef.defineSubTasks([sendPushNotification.name, sendEmail.name]);
+// Define a function that will generate any new process "all at once" task definition(s) needed
+function generateProcessAllTaskDefs() { 
+  // Example of creating a task definition to be used to process the entire batch of messages all at once
+  const logMessagesToS3TaskDef = TaskDef.defineTask(logMessagesToS3.name, logMessagesToS3); 
+  // ... with any sub-task definitions needed
+  return [logMessagesToS3TaskDef]; // ... and/or more task definitions
+}
 
-// Example of creating a task definition to be used to process the entire batch of messages 
-const logMessagesToS3TaskDef = TaskDef.defineTask(logMessagesToS3.name, logMessagesToS3); // ... with any sub-task definitions needed
+// ---------------------------------------------------------------------------------------------------------------------
+// Generate an AWS Lambda handler function that will configure and process stream events according to the given settings 
+// & options
+// ---------------------------------------------------------------------------------------------------------------------
 
-const processOneTaskDefs = [saveMessageTaskDef]; // ... and/or more task definitions
-const processAllTaskDefs = [logMessagesToS3TaskDef]; // ... and/or more task definitions
-```
-
-* Generate an AWS Lambda handler function that will configure and process stream events according to the given settings & options
-```js
 const streamConsumer = require('aws-stream-consumer/stream-consumer');
+
 const logging = require('logging-utils');
 
 // Create a context object
@@ -154,86 +161,105 @@ const context = {}; // ... or your own pre-configured context object
 const settings = undefined; // ... or your own settings for custom configuration of any or all logging, stage handling and/or stream processing settings
 const options = require('aws-stream-consumer/default-kinesis-options.json'); // ... or your own options for custom configuration of any or all logging, stage handling, kinesis and/or stream processing options
 
-function generateProcessOneTaskDefs() { return []; } // TODO add zero or more "process one" task definitions
-function generateProcessAllTaskDefs() { return []; } // TODO add zero of more "process all" task definitions
-
 // Generate an AWS Lambda handler function that will configure and process stream events 
 // according to the given settings & options (and use defaults for optional arguments)
-module.exports.handler = streamConsumer.generateHandlerFunction(context, settings, options, generateProcessOneTaskDefs, generateProcessAllTaskDefs);
+module.exports.handler = streamConsumer.generateHandlerFunction(context, settings, options, generateProcessOneTaskDefs, 
+  generateProcessAllTaskDefs);
 
 // OR ... with optional arguments included
-module.exports.handler = streamConsumer.generateHandlerFunction(context, settings, options, generateProcessOneTaskDefs, generateProcessAllTaskDefs, 
-  logging.DEBUG, 'Failed to ...', 'Finished ...');
-```
+module.exports.handler = streamConsumer.generateHandlerFunction(context, settings, options, generateProcessOneTaskDefs, 
+  generateProcessAllTaskDefs, logging.DEBUG, 'Failed to ...', 'Finished ...');
 
-* ALTERNATIVELY, configure your own AWS Lambda handler function using the following functions:
-  (See stream-consumer/generateHandlerFunction for an example handle function)
 
-  * Configure the stream consumer with Kinesis default options
-```js
-// Create a context object
-const context = {}; // ... or your own context object
-
-const settings = undefined; // ... or your own settings for custom configuration of any or all logging, stage handling and/or stream processing settings
-const options = require('aws-stream-consumer/default-kinesis-options.json'); // ... or your own options for custom configuration of any or all logging, stage handling, kinesis and/or stream processing options
+// ---------------------------------------------------------------------------------------------------------------------
+// ALTERNATIVELY, configure your own AWS Lambda handler function using the following functions:
+// (See `stream-consumer.js` `generateHandlerFunction` for an example handler function)
+// ---------------------------------------------------------------------------------------------------------------------
 
 // Configure the stream consumer's dependencies and runtime settings
-const streamConsumer = require('aws-stream-consumer/stream-consumer');
 streamConsumer.configureStreamConsumer(context, settings, options, awsEvent, awsContext);
-```
-  * Process the AWS Kinesis (or DynamoDB) stream event
-```js
-const streamConsumer = require('aws-stream-consumer/stream-consumer');
-const promise = streamConsumer.processStreamEvent(awsEvent, processOneTaskDefs, processAllTaskDefs, context);
-```
-  * Within your custom task execute function(s), update the message's (or messages') tasks' and/or sub-tasks' states
-    * Example custom "process one" task execute function for processing a single, individual message at a time
-```js
+
+// Process the AWS Kinesis (or DynamoDB) stream event
+// ---------------------------------------------------------------------------------------------------------------------
+const promise = streamConsumer.processStreamEvent(awsEvent, generateProcessOneTaskDefs, generateProcessAllTaskDefs, context);
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Within your custom task execute function(s), update the message's (or messages') tasks' and/or sub-tasks' states
+// Example custom "process one" task execute function for processing a single, individual message at a time
+// ---------------------------------------------------------------------------------------------------------------------
+
+//noinspection JSUnusedLocalSymbols
 function saveMessageToDynamoDB(message, context) {
-  // Note that 'this' will be the currently executing task witin your custom task execute function
+  // Note that 'this' will be the currently executing task within your custom task execute function
   const task = this; 
-  const subTask = task.getSubTask(sendPushNotification.name);
+  const sendPushNotificationTask = task.getSubTask(sendPushNotification.name);
+  const sendEmailTask = task.getSubTask(sendEmail.name);
   
-  // ... or alternatively from anywhere in the flow of your custom execute code
+  // ... OR ALTERNATIVELY from anywhere in the flow of your custom execute code
   const task1 = streamConsumer.getProcessOneTask(message, saveMessageToDynamoDB.name, context);
-  const subTask1 = task1.getSubTask(sendPushNotification.name);
+  //noinspection JSUnusedLocalSymbols
+  const subTaskA = task1.getSubTask(sendPushNotification.name);
+  //noinspection JSUnusedLocalSymbols
+  const subTaskB = task1.getSubTask(sendEmail.name);
   
-  const subTask2 = task1.getSubTask(sendEmail.name);
+  // ... execute your actual logic (e.g. save the message to DynamoDB)
   
-  // ...
+  // If your logic succeeds, then start executing your task's sub-tasks, e.g.
+  sendPushNotificationTask.execute('Welcome back', ['+27835551234'], context);
   
-  // Change the task's and/or sub-tasks' states based on outcomes, e.g.
-  subTask1.succeed(subTask1Result);
+  sendEmailTask.execute('from@gmail.com', 'to@gmail.com', 'Welcome back', context);
   
-  // ...
-  
-  subTask2.reject('Invalid email address', new Error('Invalid email address'), true);
-  
-  // ...
-  
+  // If necessary, change the task's and/or sub-tasks' states based on outcomes, e.g.
   task.fail(new Error('Task failed'));
     
   // ...
 }
-```
-    * Example custom "process all" task execute function for processing the entire batch of messages
-```js
+
+//noinspection JSUnusedLocalSymbols
+function sendPushNotification(notification, recipients, context) {
+  const task = this;
+  
+  // ... execute your actual send push notification logic 
+  
+  // If necessary, change the task's state based on the outcome, e.g.
+  task.succeed(result);
+
+  // ...
+}
+
+//noinspection JSUnusedLocalSymbols
+function sendEmail(from, to, email, context) {
+  const task = this;
+  
+  // ... execute your actual send email logic 
+  
+  // If necessary, change the task's state based on the outcome, e.g.
+  task.reject('Invalid email address', new Error('Invalid email address'), true);
+
+  // ...
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Example custom "process all at once" task execute function for processing the entire batch of messages
+// ---------------------------------------------------------------------------------------------------------------------
+
+//noinspection JSUnusedLocalSymbols
 function logMessagesToS3(messages, context) {
-  // Note that 'this' will be the currently executing master task witin your custom task execute function
+  // Note that 'this' will be the currently executing master task within your custom task execute function
   // NB: Master tasks and sub-tasks will apply any state changes made to them to every message in the batch
-  const masterTask = this; 
+  const masterTask = this;
+  //noinspection JSUnusedLocalSymbols
   const masterSubTask = masterTask.getSubTask('doX');
   
   // ... or alternatively from anywhere in the flow of your custom execute code
   const masterTask1 = streamConsumer.getProcessAllTask(messages, logMessagesToS3.name, context);
   const masterSubTask1 = masterTask1.getSubTask('doX');
-  
   const masterSubTask2 = masterTask1.getSubTask('doY');
   
   // ...
   
   // Change the master task's and/or sub-tasks' states based on outcomes, e.g.
-  masterSubTask1.succeed(subTask1Result);
+  masterSubTask1.succeed('subTask1Result');
   
   // ...
   
@@ -346,6 +372,9 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.0.11
+- Updated `README.md`
 
 ### 1.0.10
 - Updated `aws-core-utils` dependency to version 5.0.23
