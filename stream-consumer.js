@@ -1,7 +1,7 @@
 'use strict';
 
 // AWS core utilities
-const regions = require('aws-core-utils/regions');
+// const regions = require('aws-core-utils/regions');
 const stages = require('aws-core-utils/stages');
 const streamEvents = require('aws-core-utils/stream-events');
 
@@ -40,6 +40,7 @@ const FINALISING_TASK_NAME = 'finalising';
 // const DISCARD_UNUSABLE_RECORDS_TASK_NAME = 'discardUnusableRecords';
 // const DISCARD_REJECTED_MESSAGES_TASK_NAME = 'discardRejectedMessages';
 
+// noinspection JSUnusedGlobalSymbols
 /**
  * Utilities and functions to be used to robustly consume messages from an AWS Kinesis or DynamoDB event stream.
  * @module aws-stream-consumer/stream-consumer
@@ -830,6 +831,7 @@ function executeProcessAllTask(task, messages, context) {
  * @returns {Function} a wrapper execute function, which will invoke the task's original execute function
  */
 function taskExecutePromiseFactory(task, execute) {
+  // noinspection JSCommentMatchesSignature
   /**
    * Returns an execute function that must accept either one message or all messages as its first argument and a context
    * as its last argument, will execute the task's original execute function and return a resolved or rejected Promise
@@ -1354,7 +1356,7 @@ function saveAllMessagesTaskTrackingState(messages, context) {
     // Trigger the configured saveMessagesTaskTrackingState function to do the actual saving
     return Promise.try(() => Promise.allOrOne(saveTaskTrackingState(messages, context)))
       .then(results => {
-        context.info(`Saved task tracking state of ${ms} - results (${stringify(results)}`);
+        if (context.traceEnabled) context.trace(`Saved task tracking state of ${ms} - results (${stringify(results)}`);
         return messages;
       })
       .catch(err => {

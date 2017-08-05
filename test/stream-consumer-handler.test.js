@@ -13,7 +13,7 @@ const streamConsumer = require('../stream-consumer');
 const TaskDefs = require('task-utils/task-defs');
 const TaskDef = TaskDefs.TaskDef;
 
-const stages = require("aws-core-utils/stages");
+// const stages = require("aws-core-utils/stages");
 const kinesisCache = require("aws-core-utils/kinesis-cache");
 const dynamoDBDocClientCache = require("aws-core-utils/dynamodb-doc-client-cache");
 
@@ -24,7 +24,7 @@ const stringify = strings.stringify;
 
 //const Arrays = require("core-functions/arrays");
 
-const logging = require("logging-utils");
+const logging = require('logging-utils');
 
 const samples = require("./samples");
 

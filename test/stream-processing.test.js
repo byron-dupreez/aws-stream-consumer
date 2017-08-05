@@ -17,7 +17,7 @@ const configureStreamProcessing = streamProcessing.configureStreamProcessing;
 const getDefaultKinesisStreamProcessingSettings = streamProcessing.getDefaultKinesisStreamProcessingSettings;
 const configureDefaultKinesisStreamProcessing = streamProcessing.configureDefaultKinesisStreamProcessing;
 
-const getDefaultDynamoDBStreamProcessingSettings = streamProcessing.getDefaultDynamoDBStreamProcessingSettings;
+// const getDefaultDynamoDBStreamProcessingSettings = streamProcessing.getDefaultDynamoDBStreamProcessingSettings;
 const configureDefaultDynamoDBStreamProcessing = streamProcessing.configureDefaultDynamoDBStreamProcessing;
 
 const configureStreamProcessingWithSettings = streamProcessing.configureStreamProcessingWithSettings;
@@ -27,8 +27,8 @@ const getStreamProcessingFunction = streamProcessing.getStreamProcessingFunction
 
 // Convenience accessors for specific stream processing functions
 const getExtractMessageFromRecordFunction = streamProcessing.getExtractMessageFromRecordFunction;
-const getLoadTaskTrackingStateFunction = streamProcessing.getLoadTaskTrackingStateFunction;
-const getSaveTaskTrackingStateFunction = streamProcessing.getSaveTaskTrackingStateFunction;
+// const getLoadTaskTrackingStateFunction = streamProcessing.getLoadTaskTrackingStateFunction;
+// const getSaveTaskTrackingStateFunction = streamProcessing.getSaveTaskTrackingStateFunction;
 const getDiscardUnusableRecordsFunction = streamProcessing.getDiscardUnusableRecordsFunction;
 const getDiscardRejectedMessagesFunction = streamProcessing.getDiscardRejectedMessagesFunction;
 const getHandleIncompleteMessagesFunction = streamProcessing.getHandleIncompleteMessagesFunction;
@@ -62,14 +62,14 @@ const MAX_NUMBER_OF_ATTEMPTS_SETTING = streamProcessing.MAX_NUMBER_OF_ATTEMPTS_S
 
 // Processing function settings names
 const EXTRACT_MESSAGE_FROM_RECORD_SETTING = streamProcessing.EXTRACT_MESSAGE_FROM_RECORD_SETTING;
-const LOAD_TASK_TRACKING_STATE_SETTING = streamProcessing.LOAD_TASK_TRACKING_STATE_SETTING;
-const SAVE_TASK_TRACKING_STATE_SETTING = streamProcessing.SAVE_TASK_TRACKING_STATE_SETTING;
+// const LOAD_TASK_TRACKING_STATE_SETTING = streamProcessing.LOAD_TASK_TRACKING_STATE_SETTING;
+// const SAVE_TASK_TRACKING_STATE_SETTING = streamProcessing.SAVE_TASK_TRACKING_STATE_SETTING;
 const HANDLE_INCOMPLETE_MESSAGES_SETTING = streamProcessing.HANDLE_INCOMPLETE_MESSAGES_SETTING;
 const DISCARD_UNUSABLE_RECORDS_SETTING = streamProcessing.DISCARD_UNUSABLE_RECORDS_SETTING;
 const DISCARD_REJECTED_MESSAGES_SETTING = streamProcessing.DISCARD_REJECTED_MESSAGES_SETTING;
 
 // Specialised settings names
-const TASK_TRACKING_TABLE_NAME_SETTING = streamProcessing.TASK_TRACKING_TABLE_NAME_SETTING;
+// const TASK_TRACKING_TABLE_NAME_SETTING = streamProcessing.TASK_TRACKING_TABLE_NAME_SETTING;
 const DEAD_RECORD_QUEUE_NAME_SETTING = streamProcessing.DEAD_RECORD_QUEUE_NAME_SETTING;
 const DEAD_MESSAGE_QUEUE_NAME_SETTING = streamProcessing.DEAD_MESSAGE_QUEUE_NAME_SETTING;
 
@@ -78,7 +78,7 @@ const KINESIS_STREAM_TYPE = streamProcessing.KINESIS_STREAM_TYPE;
 const DYNAMODB_STREAM_TYPE = streamProcessing.DYNAMODB_STREAM_TYPE;
 
 // External dependencies
-const logging = require("logging-utils");
+const logging = require('logging-utils');
 const base64 = require("core-functions/base64");
 const regions = require("aws-core-utils/regions");
 const stages = require("aws-core-utils/stages");
@@ -173,6 +173,7 @@ function toSettings(streamType, taskTrackingName, timeoutAtPercentageOfRemaining
     deadMessageQueueName: deadMessageQueueName
   };
 }
+
 function toSettingsWithFunctionsOnly(extractMessageFromRecord, loadTaskTrackingState, saveTaskTrackingState,
   handleIncompleteMessages, discardUnusableRecords, discardRejectedMessages) {
 
@@ -306,10 +307,17 @@ test('isStreamProcessingConfigured', t => {
   const context = {};
   t.notOk(isStreamProcessingConfigured(context), `Stream processing must NOT be configured yet`);
 
-  configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, undefined, undefined, true);
+  try {
+    setRegionStageAndDeleteCachedInstances('us-west-1', "dev99");
 
-  t.ok(isStreamProcessingConfigured(context), `Stream processing must be configured now`);
+    configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, undefined, undefined, true);
 
+    t.ok(isStreamProcessingConfigured(context), `Stream processing must be configured now`);
+
+  } finally {
+    process.env.AWS_REGION = undefined;
+    process.env.STAGE = undefined;
+  }
   t.end();
 });
 

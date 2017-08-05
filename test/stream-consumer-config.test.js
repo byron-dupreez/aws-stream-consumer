@@ -12,7 +12,7 @@ const streamConsumer = require('../stream-consumer');
 const isStreamConsumerConfigured = streamConsumer.isStreamConsumerConfigured;
 const configureStreamConsumer = streamConsumer.configureStreamConsumer;
 
-const logging = require("logging-utils");
+const logging = require('logging-utils');
 const streamProcessing = require('../stream-processing');
 
 // External dependencies
@@ -177,7 +177,7 @@ test('isStreamConsumerConfigured with default DynamoDB options', t => {
 test('configureStreamConsumer with default Kinesis options must fail if missing region', t => {
   try {
     // Simulate NO region in AWS_REGION for testing
-    const region = setRegionStageAndDeleteCachedInstances('', undefined);
+    /*const region =*/ setRegionStageAndDeleteCachedInstances('', undefined);
     t.notOk(process.env.AWS_REGION, 'AWS region must be empty');
 
     const context = {};
@@ -196,7 +196,7 @@ test('configureStreamConsumer with default Kinesis options must fail if missing 
 
     } catch (err) {
       t.pass(`configureStreamConsumer must fail (${err})`);
-      const errMsgMatch = 'Failed to get AWS_REGION';
+      const errMsgMatch = 'Failed to get usable region from AWS_REGION';
       t.ok(err.message.indexOf(errMsgMatch) !== -1, `configureStreamConsumer error should contain (${errMsgMatch})`);
     }
 
@@ -280,7 +280,7 @@ test('configureStreamConsumer with default Kinesis options & ideal conditions mu
 test('configureStreamConsumer with default Kinesis options must fail if missing region', t => {
   try {
     // Simulate NO region in AWS_REGION for testing
-    const region = setRegionStageAndDeleteCachedInstances('', undefined);
+    /*const region =*/ setRegionStageAndDeleteCachedInstances('', undefined);
     t.notOk(process.env.AWS_REGION, 'AWS region must be empty');
 
     const context = {};
@@ -299,7 +299,7 @@ test('configureStreamConsumer with default Kinesis options must fail if missing 
 
     } catch (err) {
       t.pass(`configureStreamConsumer must fail (${err})`);
-      const errMsgMatch = 'Failed to get AWS_REGION';
+      const errMsgMatch = 'Failed to get usable region from AWS_REGION';
       t.ok(err.message.indexOf(errMsgMatch) !== -1, `configureStreamConsumer error should contain (${errMsgMatch})`);
     }
 

@@ -30,7 +30,7 @@ const stringify = strings.stringify;
 
 const Arrays = require("core-functions/arrays");
 
-const logging = require("logging-utils");
+const logging = require('logging-utils');
 
 const samples = require("./samples");
 
@@ -1896,7 +1896,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must resu
     // Simulate ideal conditions - everything meant to be configured beforehand has been configured
     configureDefaults(t, context, undefined);
 
-    const n = 1;
+    // const n = 1;
 
     // Generate a sample AWS event
     const streamName = 'TestStream_DEV2';
@@ -1971,7 +1971,7 @@ test('processStreamEvent with 1 message and triggered timeout promise, must fail
     const fatalError = new Error('Disabling Kinesis');
     configureDefaults(t, context, fatalError);
 
-    const n = 1;
+    // const n = 1;
 
     // Generate a sample AWS event
     const streamName = 'TestStream_DEV2';
