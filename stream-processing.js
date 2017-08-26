@@ -23,6 +23,7 @@ const DEAD_MESSAGE_QUEUE_NAME_SETTING = 'deadMessageQueueName';
 const KINESIS_STREAM_TYPE = "kinesis";
 const DYNAMODB_STREAM_TYPE = "dynamodb";
 
+// noinspection JSUnusedGlobalSymbols
 /**
  * Utilities for configuring stream processing, which configures and determines the processing behaviour of a stream
  * consumer.
@@ -59,6 +60,8 @@ module.exports = {
   getHandleIncompleteMessagesFunction: getHandleIncompleteMessagesFunction,
   getDiscardUnusableRecordsFunction: getDiscardUnusableRecordsFunction,
   getDiscardRejectedMessagesFunction: getDiscardRejectedMessagesFunction,
+
+  resolveBatchKey: resolveBatchKey,
 
   /**
    * Default implementations of the stream processing functions, which are NOT meant to be used directly and are ONLY
@@ -128,23 +131,31 @@ module.exports = {
   DYNAMODB_STREAM_TYPE: DYNAMODB_STREAM_TYPE
 };
 
-const regions = require('aws-core-utils/regions');
+// const regions = require('aws-core-utils/regions');
 const stages = require('aws-core-utils/stages');
 const contexts = require('aws-core-utils/contexts');
 const arns = require('aws-core-utils/arns');
+// const lambdas = require('aws-core-utils/lambdas');
 const streamEvents = require('aws-core-utils/stream-events');
 const kinesisCache = require('aws-core-utils/kinesis-cache');
-const dynamoDBDocClientCache = require('aws-core-utils/dynamodb-doc-client-cache');
+// const dynamoDBDocClientCache = require('aws-core-utils/dynamodb-doc-client-cache');
 const dynamoDBUtils = require('aws-core-utils/dynamodb-utils');
+const toStorableObject = dynamoDBUtils.toStorableObject;
 
 const Objects = require('core-functions/objects');
+const copy = Objects.copy;
+const merge = Objects.merge;
+const deep = true;
+
 const Strings = require('core-functions/strings');
 const isBlank = Strings.isBlank;
 const isNotBlank = Strings.isNotBlank;
 const trim = Strings.trim;
 const stringify = Strings.stringify;
 
-const logging = require('logging-utils');
+// const logging = require('logging-utils');
+
+const LAST_RESORT_KEY = 'LAST_RESORT_KEY';
 
 // =====================================================================================================================
 // Stream processing configuration - configures and determines the processing behaviour of a stream consumer
@@ -197,7 +208,7 @@ function configureStreamProcessing(context, settings, options, standardSettings,
     getDefaultDynamoDBStreamProcessingSettings(options) : getDefaultKinesisStreamProcessingSettings(options);
 
   const streamProcessingSettings = settingsAvailable ?
-    Objects.merge(defaultSettings, settings, false, false) : defaultSettings;
+    merge(defaultSettings, settings, false, false) : defaultSettings;
 
   // Configure stream processing with the given or derived stream processing settings
   configureStreamProcessingWithSettings(context, streamProcessingSettings, standardSettings, standardOptions, event,
@@ -261,7 +272,7 @@ function configureStreamProcessingWithSettings(context, settings, standardSettin
 function resolveStreamType(settings, options) {
   const streamType = settings && typeof settings === 'object' && isNotBlank(settings.streamType) ?
     settings.streamType : options && typeof options === 'object' && isNotBlank(options.streamType) ?
-    options.streamType : undefined;
+      options.streamType : undefined;
 
   return isNotBlank(streamType) ? trim(streamType).toLowerCase() : streamType;
 }
@@ -361,11 +372,11 @@ function configureDefaultDynamoDBStreamProcessing(context, options, standardSett
  * @returns {StreamProcessingSettings} a stream processing settings object (including both property and function settings)
  */
 function getDefaultKinesisStreamProcessingSettings(options) {
-  const settings = options && typeof options === 'object' ? Objects.copy(options, true) : {};
+  const settings = options && typeof options === 'object' ? copy(options, deep) : {};
 
   // Load defaults from local default-kinesis-options.json file
   const defaultOptions = loadDefaultKinesisStreamProcessingOptions();
-  Objects.merge(defaultOptions, settings, false, false);
+  merge(defaultOptions, settings, false, false);
 
   const defaultSettings = {
     // Configurable processing functions
@@ -376,7 +387,7 @@ function getDefaultKinesisStreamProcessingSettings(options) {
     discardUnusableRecords: discardUnusableRecordsToDRQ,
     discardRejectedMessages: discardRejectedMessagesToDMQ,
   };
-  return Objects.merge(defaultSettings, settings, false, false);
+  return merge(defaultSettings, settings, false, false);
 }
 
 /**
@@ -391,11 +402,11 @@ function getDefaultKinesisStreamProcessingSettings(options) {
  * @returns {StreamProcessingSettings} a stream processing settings object (including both property and function settings)
  */
 function getDefaultDynamoDBStreamProcessingSettings(options) {
-  const settings = options && typeof options === 'object' ? Objects.copy(options, true) : {};
+  const settings = options && typeof options === 'object' ? copy(options, deep) : {};
 
   // Load defaults from local default-dynamodb-options.json file
   const defaultOptions = loadDefaultDynamoDBStreamProcessingOptions();
-  Objects.merge(defaultOptions, settings, false, false);
+  merge(defaultOptions, settings, false, false);
 
   const defaultSettings = {
     // Configurable processing functions
@@ -406,7 +417,7 @@ function getDefaultDynamoDBStreamProcessingSettings(options) {
     discardUnusableRecords: discardUnusableRecordsToDRQ,
     discardRejectedMessages: discardRejectedMessagesToDMQ,
   };
-  return Objects.merge(defaultSettings, settings, false, false);
+  return merge(defaultSettings, settings, false, false);
 }
 
 /**
@@ -433,8 +444,9 @@ function loadDefaultKinesisStreamProcessingOptions() {
     // Kinesis & DynamoDB.DocumentClient options
     kinesisOptions: {},
     // dynamoDBDocClientOptions: undefined
+    batchKeyedOnEventID: false
   };
-  return Objects.merge(defaults, defaultOptions, false, false);
+  return merge(defaults, defaultOptions, false, false);
 }
 
 /**
@@ -460,10 +472,11 @@ function loadDefaultDynamoDBStreamProcessingOptions() {
     deadMessageQueueName: 'DeadMessageQueue',
     // Kinesis & DynamoDB.DocumentClient options
     kinesisOptions: {},
-    dynamoDBDocClientOptions: {}
+    dynamoDBDocClientOptions: {},
+    batchKeyedOnEventID: true
   };
 
-  return Objects.merge(defaults, defaultOptions, false, false);
+  return merge(defaults, defaultOptions, false, false);
 }
 
 function validateStreamProcessingConfiguration(context) {
@@ -621,13 +634,24 @@ function getDiscardUnusableRecordsFunction(context) {
 /**
  * Discards all the given unusable stream event records to the DRQ (i.e. Dead Record Queue).
  * @param {Record[]} unusableRecords - the list of unusable records to discard
+ * @param {BatchKey} batchKey
  * @param {StreamProcessing} context - the context to use
  * @return {Promise} a promise that will complete when all of its discard unusable record promises complete
  */
-function discardUnusableRecordsToDRQ(unusableRecords, context) {
+function discardUnusableRecordsToDRQ(unusableRecords, batchKey, context) {
   if (!unusableRecords || unusableRecords.length <= 0) {
     return Promise.resolve([]);
   }
+
+  const u = unusableRecords.length;
+  const us = `${u} unusable record${u !== 1 ? 's' : ''}`;
+
+  if (isBlank(batchKey.streamConsumerId) || isBlank(batchKey.shardOrEventID)) {
+    const errMsg = `Cannot discard ${us} with an incomplete batch key (${JSON.stringify(batchKey)})`;
+    context.error(errMsg);
+    return Promise.reject(new Error(errMsg));
+  }
+
   const kinesis = getKinesis(context);
 
   // Get the stage-qualified version of the DRQ stream name
@@ -636,43 +660,58 @@ function discardUnusableRecordsToDRQ(unusableRecords, context) {
 
   // Discard all of the unusable records
   const promises = unusableRecords.map(record => {
-    const request = toDRQPutRequestFromUnusableRecord(record, deadRecordQueueName, context);
+    const request = toDRQPutRequestFromUnusableRecord(record, batchKey, deadRecordQueueName, context);
     return kinesis.putRecord(request).promise();
   });
-  const m = unusableRecords.length;
-  const plural = m !== 1 ? 's' : '';
 
   return Promise.all(promises)
     .then(results => {
-      context.info(`Discarded ${m} unusable record${plural} to Kinesis DRQ (${deadRecordQueueName})`);
+      context.info(`Discarded ${us} to Kinesis DRQ (${deadRecordQueueName})`);
       return results;
     })
     .catch(err => {
-      context.error(`Failed to discard ${m} unusable record${plural} to Kinesis DRQ (${deadRecordQueueName}) - error (${err})`, err.stack);
+      context.error(`Failed to discard all ${us} to Kinesis DRQ (${deadRecordQueueName}) - error (${err})`, err.stack);
       throw err;
     });
 }
 
-function toDRQPutRequestFromUnusableRecord(record, deadRecordQueueName, context) {
+function toDRQPutRequestFromUnusableRecord(record, batchKey, deadRecordQueueName, context) {
   if (record.eventSource === 'aws:kinesis') {
-    return toDRQPutRequestFromKinesisUnusableRecord(record, deadRecordQueueName)
+    return toDRQPutRequestFromKinesisUnusableRecord(record, batchKey, deadRecordQueueName);
   } else if (record.eventSource === 'aws:dynamodb') {
-    return toDRQPutRequestFromDynamoDBUnusableRecord(record, deadRecordQueueName)
+    return toDRQPutRequestFromDynamoDBUnusableRecord(record, batchKey, deadRecordQueueName);
   } else {
     const errMsg = `Cannot convert unusable record to DRQ request with unexpected record eventSource (${record.eventSource})`;
     context.error(errMsg);
     throw new Error(errMsg);
   }
+
 }
 
-function toDRQPutRequestFromKinesisUnusableRecord(record, deadRecordQueueName) {
-  const partitionKey = record.kinesis.partitionKey;
-  const explicitHashKey = record.kinesis.explicitHashKey;
+function toDRQPutRequestFromKinesisUnusableRecord(record, batchKey, deadRecordQueueName) {
+  const kinesis = record && record.kinesis;
+
+  const deadRecord = {
+    streamConsumerId: batchKey.streamConsumerId,
+    shardOrEventID: batchKey.shardOrEventID,
+    ver: 'DR|1.0',
+    eventID: (record && record.eventID) || undefined,
+    eventSeqNo: (kinesis && kinesis.sequenceNumber) || undefined,
+    // eventSubSeqNo: undefined,
+    // reasonUnusable: undefined, //TODO
+    record: record,
+    // userRecord: userRecord,
+    discardedAt: new Date().toISOString()
+  };
+
+  // Generate a partition key to use for the DRQ request
+  const partitionKey = (kinesis && kinesis.partitionKey) || LAST_RESORT_KEY;
+  const explicitHashKey = kinesis && kinesis.explicitHashKey;
 
   const request = {
     StreamName: deadRecordQueueName,
     PartitionKey: partitionKey,
-    Data: JSON.stringify(record)
+    Data: JSON.stringify(deadRecord)
   };
   if (explicitHashKey) {
     request.ExplicitHashKey = explicitHashKey;
@@ -680,22 +719,42 @@ function toDRQPutRequestFromKinesisUnusableRecord(record, deadRecordQueueName) {
   return request;
 }
 
-function toDRQPutRequestFromDynamoDBUnusableRecord(record, deadRecordQueueName) {
-  // Get the original record's event source stream name
-  const eventSourceStreamName = trim(streamEvents.getKinesisEventSourceStreamName(record));
-  const sourceStreamName = isNotBlank(eventSourceStreamName) ? eventSourceStreamName : '';
+function toDRQPutRequestFromDynamoDBUnusableRecord(record, batchKey, deadRecordQueueName) {
+  const dynamodb = record && record.dynamodb;
+  const streamConsumerId = batchKey.streamConsumerId;
+
+  const deadRecord = {
+    streamConsumerId: streamConsumerId,
+    shardOrEventID: batchKey.shardOrEventID,
+    ver: 'DR|1.0',
+    eventID: record && record.eventID,
+    eventSeqNo: dynamodb && dynamodb.SequenceNumber,
+    // reasonUnusable: state ? state.reasonUnusable : undefined, //TODO
+    record: record,
+    discardedAt: new Date().toISOString()
+  };
+
+  // Resolve the source stream's name
+  let sourceStreamName = batchKey.components.streamName;
+  if (isBlank(sourceStreamName) && isNotBlank(streamConsumerId)) {
+    // Extract the source stream name from the batch key's streamConsumerId
+    const ss = streamConsumerId.indexOf('|') + 1; // find start of source stream name
+    sourceStreamName = (ss !== -1 && streamConsumerId.substring(ss, streamConsumerId.indexOf('|', ss))) || '';
+  }
 
   // Combine all of the record's Keys into a single string
-  const keysAndValues = record.dynamodb ? dynamoDBUtils.toKeyValueStrings(record.dynamodb.Keys).join('|') : '';
+  const keysAndValues = (dynamodb && dynamodb.Keys && dynamodb.Keys.length > 0 &&
+    dynamoDBUtils.toKeyValueStrings(dynamodb.Keys).join('|')) || '';
 
-  // Generate a partition key to use for the DMQ request
-  const partitionKey = `${sourceStreamName}|${keysAndValues}`.substring(0, MAX_PARTITION_KEY_SIZE);
+  // Generate a partition key to use for the DRQ request
+  const partitionKey = isNotBlank(sourceStreamName) || isNotBlank(keysAndValues) ?
+    `${sourceStreamName}|${keysAndValues}`.substring(0, MAX_PARTITION_KEY_SIZE) : LAST_RESORT_KEY;
 
   // Construct a Kinesis putRecord request to be sent to the DRQ
   return {
     StreamName: deadRecordQueueName,
     PartitionKey: partitionKey,
-    Data: JSON.stringify(record)
+    Data: JSON.stringify(deadRecord)
   };
 }
 
@@ -712,13 +771,24 @@ function getDiscardRejectedMessagesFunction(context) {
 /**
  * Routes all the given rejected messages to the DMQ (i.e. Dead Message Queue).
  * @param {Message[]} rejectedMessages the list of rejected messages to discard
+ * @param {BatchKey} batchKey
  * @param {StreamProcessing} context the context to use
  * @return {Promise}
  */
-function discardRejectedMessagesToDMQ(rejectedMessages, context) {
+function discardRejectedMessagesToDMQ(rejectedMessages, batchKey, context) {
   if (!rejectedMessages || rejectedMessages.length <= 0) {
     return Promise.resolve([]);
   }
+
+  const m = rejectedMessages.length;
+  const ms = `${m} rejected message${m !== 1 ? 's' : ''}`;
+
+  if (isBlank(batchKey.streamConsumerId) || isBlank(batchKey.shardOrEventID)) {
+    const errMsg = `Cannot discard ${ms} with an incomplete batch key (${JSON.stringify(batchKey)})`;
+    context.error(errMsg);
+    return Promise.reject(new Error(errMsg));
+  }
+
   const kinesis = getKinesis(context);
 
   // Get the stage-qualified version of the DRQ stream name
@@ -727,98 +797,133 @@ function discardRejectedMessagesToDMQ(rejectedMessages, context) {
 
   // Discard all of the rejected messages to the DMQ
   const promises = rejectedMessages.map(message => {
-    const request = toDMQPutRequestFromRejectedMessage(message, deadMessageQueueName, context);
+    const request = toDMQPutRequestFromRejectedMessage(message, batchKey, deadMessageQueueName, context);
     return kinesis.putRecord(request).promise();
   });
-  const m = rejectedMessages.length;
-  const plural = m !== 1 ? 's' : '';
 
   return Promise.all(promises)
     .then(results => {
-      context.info(`Discarded ${m} rejected message${plural} to Kinesis DMQ (${deadMessageQueueName})`);
+      context.info(`Discarded ${ms} to Kinesis DMQ (${deadMessageQueueName})`);
       return results;
     })
     .catch(err => {
-      context.error(`Failed to discard ${m} rejected message${plural} to Kinesis DMQ (${deadMessageQueueName}) - error (${err})`, err.stack);
+      context.error(`Failed to discard all ${ms} to Kinesis DMQ (${deadMessageQueueName}) - error (${err})`, err.stack);
       throw err;
     });
 }
 
-function toDMQPutRequestFromRejectedMessage(message, deadRecordQueueName, context) {
+function toDMQPutRequestFromRejectedMessage(message, batchKey, deadMessageQueueName, context) {
   const record = getRecord(message, context);
   const eventSource = record.eventSource;
 
-  if (record.eventSource === 'aws:kinesis') {
-    return toDMQPutRequestFromKinesisRejectedMessage(message, record, deadRecordQueueName)
-  } else if (record.eventSource === 'aws:dynamodb') {
-    return toDMQPutRequestFromDynamoDBRejectedMessage(message, record, deadRecordQueueName)
+  if (eventSource === 'aws:kinesis') {
+    return toDMQPutRequestFromKinesisRejectedMessage(message, record, batchKey, deadMessageQueueName, context)
+  } else if (eventSource === 'aws:dynamodb') {
+    return toDMQPutRequestFromDynamoDBRejectedMessage(message, record, batchKey, deadMessageQueueName, context)
   } else {
-    const errMsg = `Cannot convert unusable record to DRQ request with unexpected record eventSource (${record.eventSource})`;
+    const errMsg = `Cannot convert unusable record to DRQ request with unexpected record eventSource (${eventSource})`;
     context.error(errMsg);
     throw new Error(errMsg);
   }
 }
 
-function toDMQPutRequestFromKinesisRejectedMessage(message, record, deadMessageQueueName) {
-  // Get the original record's event source stream name
-  const eventSourceStreamName = trim(streamEvents.getKinesisEventSourceStreamName(record));
-  const sourceStreamName = isNotBlank(eventSourceStreamName) ? eventSourceStreamName : '';
+function toDMQPutRequestFromKinesisRejectedMessage(message, record, batchKey, deadMessageQueueName, context) {
+  const kinesis = record && record.kinesis;
+  const streamConsumerId = batchKey.streamConsumerId;
 
-  // Get the original Kinesis record's key information
-  const sourcePartitionKey = record.kinesis.partitionKey;
-  const sourceExplicitHashKey = record.kinesis.explicitHashKey;
-  const sourceSequenceNumber = record.kinesis.sequenceNumber;
+  const msg = copy(message, deep);
+  const msgState = getTaskTracking(msg, context);
+  deleteTaskTracking(msg, context);
+  delete msgState.record;
 
   // Wrap the message in a rejected message "envelope" with metadata
   const rejectedMessage = {
-    message: message,
-    source: {
-      streamName: sourceStreamName,
-      partitionKeyOrKeys: sourcePartitionKey,
-      sequenceNumber: sourceSequenceNumber,
-    },
+    streamConsumerId: streamConsumerId,
+    shardOrEventID: batchKey.shardOrEventID,
+    ver: 'DM|1.0',
+    eventID: record.eventID || msgState.eventID,
+    eventSeqNo: (kinesis && kinesis.sequenceNumber) || msgState.eventSeqNo,
+    // eventSubSeqNo: msgState.eventSubSeqNo,
+    // ids: msgState.ids,
+    // keys: msgState.keys,
+    // seqNos: msgState.seqNos,
+    message: toStorableObject(msg),
+    messageState: toStorableObject(msgState),
+    record: record,
+    // source: {
+    //   streamName: sourceStreamName,
+    //   partitionKey: sourcePartitionKey,
+    //   seqNo: sourceSequenceNumber
+    // },
+    // reasonRejected: msgState ? msgState... : undefined, //TODO
     discardedAt: new Date().toISOString()
   };
-  if (sourceExplicitHashKey) {
-    rejectedMessage.source.explicitHashKey = sourceExplicitHashKey;
-  }
+  // if (sourceExplicitHashKey) {
+  //   rejectedMessage.source.explicitHashKey = sourceExplicitHashKey;
+  // }
+
+  // Get the original Kinesis record's key information
+  const partitionKey = (kinesis && kinesis.partitionKey) || LAST_RESORT_KEY;
+  const explicitHashKey = kinesis && kinesis.explicitHashKey;
 
   // Construct a Kinesis putRecord request to be sent to the DMQ
   const request = {
     StreamName: deadMessageQueueName,
-    PartitionKey: sourcePartitionKey,
+    PartitionKey: partitionKey,
     Data: JSON.stringify(rejectedMessage)
   };
-  if (sourceExplicitHashKey) {
-    request.ExplicitHashKey = sourceExplicitHashKey;
+  if (explicitHashKey) {
+    request.ExplicitHashKey = explicitHashKey;
   }
   return request;
 }
 
-function toDMQPutRequestFromDynamoDBRejectedMessage(message, record, deadMessageQueueName) {
-  // Get the original record's event source stream name
-  const eventSourceStreamName = trim(streamEvents.getKinesisEventSourceStreamName(record));
-  const sourceStreamName = isNotBlank(eventSourceStreamName) ? eventSourceStreamName : '';
+function toDMQPutRequestFromDynamoDBRejectedMessage(message, record, batchKey, deadMessageQueueName, context) {
+  const dynamodb = record && record.dynamodb;
+  const streamConsumerId = batchKey.streamConsumerId;
 
-  const sourceKeys = record.dynamodb ? JSON.stringify(record.dynamodb.Keys) : '';
-  const sourceSequenceNumber = record.dynamodb ? record.dynamodb.SequenceNumber : '';
+  const msg = copy(message, deep);
+  const msgState = getTaskTracking(msg, context);
+  deleteTaskTracking(msg, context);
+  delete msgState.record;
 
   // Wrap the message in a rejected message "envelope" with metadata
   const rejectedMessage = {
-    message: message,
-    source: {
-      streamName: sourceStreamName,
-      partitionKeyOrKeys: sourceKeys,
-      sequenceNumber: sourceSequenceNumber,
-    },
+    streamConsumerId: streamConsumerId,
+    shardOrEventID: batchKey.shardOrEventID,
+    ver: 'DM|1.0',
+    eventID: record.eventID || msgState.eventID,
+    eventSeqNo: (dynamodb && dynamodb.SequenceNumber) || msgState.eventSeqNo,
+    // ids: msgState.ids,
+    // keys: msgState.keys,
+    // seqNos: msgState.seqNos,
+    message: toStorableObject(msg),
+    msgState: toStorableObject(msgState),
+    record: record,
+    // source: {
+    //   streamName: sourceStreamName,
+    //   partitionKey: evenSourceARN,
+    //   seqNo: sourceSequenceNumber
+    // },
+    // reasonRejected: msgState ? msgState... : undefined, //TODO
     discardedAt: new Date().toISOString()
   };
 
+  // Resolve the source stream's name
+  let sourceStreamName = batchKey.components.streamName;
+  if (isBlank(sourceStreamName) && isNotBlank(streamConsumerId)) {
+    // Extract the source stream name from the batch key's streamConsumerId
+    const ss = streamConsumerId.indexOf('|') + 1; // find start of source stream name
+    sourceStreamName = (ss !== -1 && streamConsumerId.substring(ss, streamConsumerId.indexOf('|', ss))) || '';
+  }
+
   // Combine all of the record's Keys into a single string
-  const keysAndValues = record.dynamodb ? dynamoDBUtils.toKeyValueStrings(record.dynamodb.Keys).join('|') : '';
+  const keysAndValues = (dynamodb && dynamodb.Keys && dynamodb.Keys.length > 0 &&
+    dynamoDBUtils.toKeyValueStrings(dynamodb.Keys).join('|')) || '';
 
   // Generate a partition key to use for the DMQ request
-  const partitionKey = `${sourceStreamName}|${keysAndValues}`.substring(0, MAX_PARTITION_KEY_SIZE);
+  const partitionKey = isNotBlank(sourceStreamName) || isNotBlank(keysAndValues) ?
+    `${sourceStreamName}|${keysAndValues}`.substring(0, MAX_PARTITION_KEY_SIZE) : LAST_RESORT_KEY;
 
   // Construct a Kinesis putRecord request to be sent to the DMQ
   return {
@@ -962,15 +1067,15 @@ function getKinesis(context) {
   return context.kinesis;
 }
 
-function getDynamoDBDocClient(context) {
-  if (!context.dynamoDBDocClient) {
-    // Configure a default AWS DynamoDB.DocumentClient instance on context.dynamoDBDocClient if not already configured
-    const dynamoDBDocClientOptions = require('./default-dynamodb-options.json').dynamoDBDocClientOptions;
-    context.warn(`An AWS DynamoDB.DocumentClient instance was not configured on context.dynamoDBDocClient yet - configuring an instance with default options (${stringify(dynamoDBDocClientOptions)}). Preferably configure this beforehand, using aws-core-utils/dynamodb-doc-client-cache#configureDynamoDBDocClient`);
-    dynamoDBDocClientCache.configureDynamoDBDocClient(context, dynamoDBDocClientOptions);
-  }
-  return context.dynamoDBDocClient;
-}
+// function getDynamoDBDocClient(context) {
+//   if (!context.dynamoDBDocClient) {
+//     // Configure a default AWS DynamoDB.DocumentClient instance on context.dynamoDBDocClient if not already configured
+//     const dynamoDBDocClientOptions = require('./default-dynamodb-options.json').dynamoDBDocClientOptions;
+//     context.warn(`An AWS DynamoDB.DocumentClient instance was not configured on context.dynamoDBDocClient yet - configuring an instance with default options (${stringify(dynamoDBDocClientOptions)}). Preferably configure this beforehand, using aws-core-utils/dynamodb-doc-client-cache#configureDynamoDBDocClient`);
+//     dynamoDBDocClientCache.configureDynamoDBDocClient(context, dynamoDBDocClientOptions);
+//   }
+//   return context.dynamoDBDocClient;
+// }
 
 function getRecord(message, context) {
   const taskTrackingName = context.streamProcessing.taskTrackingName;
@@ -1034,14 +1139,15 @@ function saveTaskTrackingStateToDynamoDB(messages, context) {
     return Promise.resolve(messages);
   }
 
-  const taskTrackingName = context.streamProcessing.taskTrackingName;
+  // const taskTrackingName = context.streamProcessing.taskTrackingName;
 
   const unqualifiedTaskTrackingTableName = context.streamProcessing.taskTrackingTableName; //TODO configure
   const tableName = stages.toStageQualifiedResourceName(unqualifiedTaskTrackingTableName, context.stage, context);
 
 
-  const dynamoDBDocClient = getDynamoDBDocClient(context);
+  // const dynamoDBDocClient = getDynamoDBDocClient(context);
 
+  // noinspection JSUnusedLocalSymbols
   function saveMessageTaskTrackingDetails(message, context) {
     //TODO implement saveMessageTaskTrackingDetails
     throw new Error('TODO implement saveMessageTaskTrackingDetails');
@@ -1059,4 +1165,167 @@ function saveTaskTrackingStateToDynamoDB(messages, context) {
       context.error(`Failed to save task tracking details of ${m} incomplete message${plural} to DynamoDB table (${tableName}) - error (${err})`, err.stack);
       throw err;
     });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Start of backport of aws-core-utils/lambdas from 6.1.0
+// ---------------------------------------------------------------------------------------------------------------------
+function getFunctionNameVersionAndAlias(awsContext) {
+  const name = process.env.AWS_LAMBDA_FUNCTION_NAME;
+  const version = process.env.AWS_LAMBDA_FUNCTION_VERSION;
+
+  const nameFromContext = awsContext && awsContext.functionName;
+  const versionFromContext = awsContext && awsContext.functionVersion;
+
+  const invokedFunctionArn = awsContext && awsContext.invokedFunctionArn;
+  const resources = arns.getArnResources(invokedFunctionArn);
+  const nameFromArn = resources.resource;
+  if (nameFromArn !== nameFromContext) {
+    console.warn(`Lambda context with function name (${nameFromContext}) has different name (${nameFromArn}) in invoked function ARN`);
+  }
+
+  const aliasOrVersion = resources.aliasOrVersion;
+  const alias = isNotBlank(aliasOrVersion) && aliasOrVersion !== versionFromContext ? //&& aliasOrVersion !== version ?
+    aliasOrVersion : '';
+
+  return {functionName: name || nameFromContext || '', version: version || versionFromContext || '', alias: alias};
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// End of backport of aws-core-utils/lambdas from 6.1.0
+// ---------------------------------------------------------------------------------------------------------------------
+
+function resolveConsumerId(context) {
+  if (!context.streamProcessing.consumerId) {
+    // Resolve the invoked Lambda's function name, version & alias (if possible)
+    const invokedLambda = getFunctionNameVersionAndAlias(context.awsContext);
+    context.streamProcessing.consumerId = `${invokedLambda.functionName}${invokedLambda.alias ? `:${invokedLambda.alias}` : ''}`;
+  }
+
+  return context.streamProcessing.consumerId;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Start of copy from stream-consumer
+// ---------------------------------------------------------------------------------------------------------------------
+// function getTaskTrackingName(context) {
+//   return context.streamProcessing.taskTrackingName;
+// }
+
+function getTaskTracking(target, context) {
+  const taskTrackingName = context.streamProcessing.taskTrackingName;
+  let taskTracking = target[taskTrackingName];
+  if (!taskTracking) {
+    taskTracking = {};
+    if (Array.isArray(target)) {
+      Object.defineProperty(target, taskTrackingName, {value: taskTracking, writable: true, enumerable: false});
+    } else {
+      target[taskTrackingName] = taskTracking;
+    }
+  }
+  return taskTracking;
+}
+
+function deleteTaskTracking(target, context) {
+  const taskTrackingName = context.streamProcessing.taskTrackingName;
+  delete target[taskTrackingName];
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// End of copy from stream-consumer
+// ---------------------------------------------------------------------------------------------------------------------
+
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Start of backport of aws-core-utils/stream-events from 7.0.3
+// ---------------------------------------------------------------------------------------------------------------------
+/**
+ * Extracts the shard id from the given Kinesis record's eventID.
+ * @param {KinesisEventRecord|*} record - a Kinesis stream event record
+ * @returns {string} the shard id (if any) or an empty string
+ */
+function getKinesisShardId(record) {
+  return record && record.eventID ? getKinesisShardIdFromEventID(record.eventID) : '';
+}
+
+/**
+ * Extracts the shard id from the given Kinesis eventID.
+ * @param {string} eventID - an eventID from an AWS Kinesis stream event record.
+ * @return {string|undefined} the shard id (if any) or an empty string
+ */
+function getKinesisShardIdFromEventID(eventID) {
+  if (eventID) {
+    const sepPos = eventID.indexOf(':');
+    return sepPos !== -1 ? eventID.substring(0, sepPos) : '';
+  }
+  return '';
+}
+// ---------------------------------------------------------------------------------------------------------------------
+// End of backport of aws-core-utils/stream-events from 7.0.3
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Returns whether each batch must be keyed on its first usable record's event ID (if DynamoDB or true) or on its shard
+ * ID (if Kinesis and false) as configured on the given context.
+ * @param {StreamProcessing} context - the context from which to fetch the maximum number of attempts
+ * @returns {boolean} whether each batch must be keyed on its first usable record's event ID or on its shard ID
+ */
+function isBatchKeyedOnEventID(context) {
+  return context.streamProcessing.batchKeyedOnEventID;
+}
+
+/**
+ * Resolves the key to be used for a batch of records. Returns undefined if no key could be resolved.
+ * @param {Records} records - the entire batch of records
+ * @param {StreamConsumerContext|StageAware|Logging} context - the context to use
+ * @returns {BatchKey|undefined} the batch key to use (if resolved); otherwise undefined
+ */
+function resolveBatchKey(records, context) {
+  // Find the "first" usable record that has both an eventID and an eventSourceARN
+  const record1 = records.find(r => r && typeof r === 'object' && isNotBlank(r.eventID) && isNotBlank(r.eventSourceARN));
+
+  if (!record1) {
+    context.error(`Failed to resolve a batch key to use, since failed to find any record with an eventID and eventSourceARN - records ${stringify(records)}`);
+    return undefined;
+  }
+
+  const dynamoDBStreamType = isDynamoDBStreamType(context);
+
+  // Resolve the hash key to use:
+  // For Kinesis: Extract the stream name from the "first" record's eventSourceARN
+  // For DynamoDB: Extract the table name and stream timestamp from the "first" record's eventSourceARN and join them with a '/'
+  const streamName = dynamoDBStreamType ?
+    streamEvents.getDynamoDBEventSourceTableNameAndStreamTimestamp(record1).join('/') :
+    streamEvents.getKinesisEventSourceStreamName(record1);
+
+  const consumerId = resolveConsumerId(context);
+  const streamConsumerId = dynamoDBStreamType ? `D|${streamName}|${consumerId}` : `K|${streamName}|${consumerId}`;
+
+  // Resolve the range key to use:
+  // For Kinesis, extract and use the shard id from the "first" record's eventID (if isBatchKeyedOnEventID is false)
+  // For DynamoDB, use the eventID of the "first" usable DynamoDB record as a workaround, since it is NOT currently
+  // possible to determine the DynamoDB stream's shard id from the event - have to instead use the "first" event ID as
+  // an identifier for the batch of records. The only risk with this workaround is that the "first" record could be
+  // trimmed at the TRIM_HORIZON and then we would not be able to load the batch's previous state
+  const batchKeyedOnEventID = dynamoDBStreamType || isBatchKeyedOnEventID(context);
+  const shardId = !dynamoDBStreamType ? getKinesisShardId(record1) : undefined;
+  const eventID1 = record1.eventID;
+  const shardOrEventID = batchKeyedOnEventID ? `E|${eventID1}` : `S|${shardId}`;
+
+  const batchKey = {
+    streamConsumerId: streamConsumerId,
+    shardOrEventID: shardOrEventID
+  };
+
+  const components = {
+    streamName: streamName,
+    consumerId: consumerId,
+    shardId: shardId,
+    eventID: eventID1
+  };
+  Object.defineProperty(batchKey, 'components', {
+    value: components, enumerable: false, writable: true, configurable: true}
+  );
+
+  return batchKey;
 }

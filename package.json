@@ -1,6 +1,6 @@
 {
   "name": "aws-stream-consumer",
-  "version": "1.0.15",
+  "version": "1.1.0",
   "description": "Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams",
   "author": "Byron du Preez",
   "license": "Apache-2.0",
@@ -12,14 +12,14 @@
     "test": "tape ./test/*.test.js"
   },
   "dependencies": {
-    "aws-core-utils": "5.1.0",
-    "core-functions": "2.0.17",
-    "logging-utils": "3.0.17",
-    "task-utils": "4.0.13"
+    "aws-core-utils": "5.1.1",
+    "core-functions": "2.0.18",
+    "logging-utils": "3.0.18",
+    "task-utils": "4.0.14"
   },
   "devDependencies": {
-    "aws-sdk": "2.54.0",
-    "tape": "^4.7.0",
+    "aws-sdk": "2.92.0",
+    "tape": "^4.8.0",
     "uuid": "3.1.0"
   },
   "repository": "https://github.com/byron-dupreez/aws-stream-consumer"

@@ -132,3 +132,22 @@
 /**
  * @typedef {Object} Record - represents an AWS stream event record
  */
+
+/**
+ * @typedef {Object} BatchKey - the key of the batch & its components
+ * @property {string} streamConsumerId - the first part of the batch key, which is a concatenation of: 'K' (for Kinesis) or 'D' (for DynamoDB); the Kinesis or DynamoDB stream name; and the derived consumer ID, all joined by '|' separators
+ * @property {string} shardOrEventID - the second part of the batch key, which is a concatenation of either: 'S' and the Kinesis shard ID; or 'E' and the first usable Kinesis or DynamoDB event ID, joined by '|' separators
+ * @property {BatchKeyComponents|undefined} [components] - the non-enumerable components of the batch key, included for convenience
+ *
+ * Notes:
+ * 1. A DynamoDB stream name is derived from its DynamoDB table name suffixed with its stream timestamp (separated by '/').
+ * 2. A consumerId is derived from its invoked Lambda's function name & alias (if any) suffixed with an optional, configurable consumerIdSuffix
+ */
+
+/**
+ * @typedef {Object} BatchKeyComponents  - the NON-ENUMERABLE components of the batch key
+ * @property {string} streamName - the Kinesis or DynamoDB stream name component
+ * @property {string} consumerId - the derived consumer ID component
+ * @property {string|undefined} [shardId] - the Kinesis shard ID component (if applicable & if any)
+ * @property {string|undefined} [eventID] - the first usable Kinesis or DynamoDB event ID component (if any)
+ */

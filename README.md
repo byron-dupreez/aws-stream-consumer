@@ -1,4 +1,4 @@
-# aws-stream-consumer v1.0.15
+# aws-stream-consumer v1.1.0
 
 Utilities for building robust AWS Lambda consumers of stream events from Amazon Web Services (AWS) Kinesis or DynamoDB streams.
 
@@ -372,6 +372,29 @@ $ tape test/*.js
 See the [package source](https://github.com/byron-dupreez/aws-stream-consumer) for more details.
 
 ## Changes
+
+### 1.1.0
+- Changes to `stream-processing` module:
+  - Major refactoring of `discardUnusableRecordsToDRQ`, `toDRQPutRequestFromUnusableRecord`, 
+    `toDRQPutRequestFromKinesisUnusableRecord` & `toDRQPutRequestFromDynamoDBUnusableRecord` functions (including 
+    addition of new `batchKey` arguments)
+  - Major refactoring of `discardRejectedMessagesToDMQ`, `toDMQPutRequestFromRejectedMessage`, 
+    `toDMQPutRequestFromKinesisRejectedMessage` & `toDMQPutRequestFromDynamoDBRejectedMessage` functions (including 
+    addition of new `batchKey` arguments)
+  - Added default `batchKeyedOnEventID` option
+  - Added back-ports of `resolveBatchKey`, `getFunctionNameVersionAndAlias`, `resolveConsumerId`, `getTaskTrackingName`,
+    `getTaskTracking`, `deleteTaskTracking`, `getKinesisShardId`, `getKinesisShardIdFromEventID` & 
+    `isBatchKeyedOnEventID` functions from various `aws-core-utils@7.0.3` modules & from latest uncommitted 
+    `aws-stream-consumer`, `kinesis-stream-consumer` & `dynamodb-stream-consumer` modules
+- Changes to `stream-consumer` module:
+  - Added `getTaskTrackingName` & `deleteTaskTracking` functions
+- Changes to `type-defs` module:
+  - Added backport of `BatchKey` & `BatchKeyComponents` type definitions
+- Updated `aws-core-utils` dependency to version 5.1.1
+- Updated `core-functions` dependency to version 2.0.18
+- Updated `logging-utils` dependency to version 3.0.18
+- Updated `task-utils` dependency to version 4.0.14
+- Updated `aws-sdk` dev dependency to version 2.92.0
 
 ### 1.0.15
 - Upgraded `aws-core-utils` dependency to 5.1.0

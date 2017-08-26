@@ -57,7 +57,9 @@ module.exports = {
 
   validateTaskDefinitions: validateTaskDefinitions,
 
+  getTaskTrackingName: getTaskTrackingName,
   getTaskTracking: getTaskTracking,
+  deleteTaskTracking: deleteTaskTracking,
   getProcessOneTasksByName: getProcessOneTasksByName,
   getProcessOneTask: getProcessOneTask,
   getProcessAllTasksByName: getProcessAllTasksByName,
@@ -288,6 +290,9 @@ function processStreamEvent(event, processOneTaskDefsOrNone, processAllTaskDefsO
     };
     return Promise.resolve(streamConsumerResults);
   }
+
+  // Resolve & cache the batch key
+  context.batchKey = streamProcessing.resolveBatchKey(records, context);
 
   // Convert all of the parsable Kinesis event's records back into their original message object forms; skipping &
   // logging all unparseable records
@@ -582,6 +587,10 @@ function setRecord(message, record, context) {
   Object.defineProperty(taskTracking, 'record', {value: record, writable: true, configurable: true, enumerable: false});
 }
 
+function getTaskTrackingName(context) {
+  return context.streamProcessing.taskTrackingName;
+}
+
 function getTaskTracking(target, context) {
   const taskTrackingName = context.streamProcessing.taskTrackingName;
   let taskTracking = target[taskTrackingName];
@@ -594,6 +603,11 @@ function getTaskTracking(target, context) {
     }
   }
   return taskTracking;
+}
+
+function deleteTaskTracking(target, context) {
+  const taskTrackingName = context.streamProcessing.taskTrackingName;
+  delete target[taskTrackingName];
 }
 
 function getPhaseTasksByName(target, context) {
@@ -1019,7 +1033,7 @@ function discardAnyUnusableRecords(unusableRecords, records, context) {
 
   if (discardUnusableRecords) {
     // Trigger the configured discardUnusableRecords function to do the actual discarding
-    return Promise.try(() => Promise.allOrOne(discardUnusableRecords(unusableRecords, context)))
+    return Promise.try(() => Promise.allOrOne(discardUnusableRecords(unusableRecords, context.batchKey, context)))
       .then(results => {
         context.info(`Discarded ${usOfRs} - results (${stringify(results)}`);
         return unusableRecords;
@@ -1470,7 +1484,7 @@ function discardAnyRejectedMessages(messages, context) {
 
   if (discardRejectedMessages) {
     // Trigger the configured discardRejectedMessages function to do the actual discarding
-    return Promise.try(() => Promise.allOrOne(discardRejectedMessages(rejectedMessages, context)))
+    return Promise.try(() => Promise.allOrOne(discardRejectedMessages(rejectedMessages, context.batchKey, context)))
       .then(results => {
         context.info(`Discarded ${rsOfMs} - results (${stringify(results)}`);
         return rejectedMessages;

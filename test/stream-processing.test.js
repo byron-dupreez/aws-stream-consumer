@@ -1106,7 +1106,8 @@ test('discardUnusableRecordsToDRQ with 0 records', t => {
     configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
 
     t.plan(1);
-    discardUnusableRecordsToDRQ([], context)
+    const batchKey = streamProcessing.resolveBatchKey([record], context);
+    discardUnusableRecordsToDRQ([], batchKey, context)
       .then(results => {
         t.equal(results.length, 0, `discardUnusableRecordsToDRQ results (${results.length}) must be 0`);
       })
@@ -1140,7 +1141,8 @@ test('discardUnusableRecordsToDRQ with 1 record', t => {
     configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
 
     t.plan(2);
-    discardUnusableRecordsToDRQ([record], context)
+    const batchKey = streamProcessing.resolveBatchKey([record], context);
+    discardUnusableRecordsToDRQ([record], batchKey, context)
       .then(results => {
         t.equal(results.length, 1, `discardUnusableRecordsToDRQ results (${results.length}) must be 1`);
       })
@@ -1176,7 +1178,8 @@ test('discardUnusableRecordsToDRQ with 2 records', t => {
     configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
 
     t.plan(3);
-    discardUnusableRecordsToDRQ(records, context)
+    const batchKey = streamProcessing.resolveBatchKey(records, context);
+    discardUnusableRecordsToDRQ(records, batchKey, context)
       .then(results => {
         t.equal(results.length, 2, `discardUnusableRecordsToDRQ results (${results.length}) must be 2`);
       })
@@ -1211,7 +1214,8 @@ test('discardUnusableRecordsToDRQ with 1 record and failure', t => {
     configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
 
     t.plan(2);
-    discardUnusableRecordsToDRQ([record], context)
+    const batchKey = streamProcessing.resolveBatchKey([record], context);
+    discardUnusableRecordsToDRQ([record], batchKey, context)
       .then(() => {
         t.fail(`discardUnusableRecordsToDRQ expected a failure`);
       })
@@ -1249,7 +1253,8 @@ test('discardRejectedMessagesToDMQ with 0 messages', t => {
     configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
 
     t.plan(1);
-    discardRejectedMessagesToDMQ([], context)
+    const batchKey = streamProcessing.resolveBatchKey([record], context);
+    discardRejectedMessagesToDMQ([], batchKey, context)
       .then(results => {
         t.equal(results.length, 0, `discardRejectedMessagesToDMQ results (${results.length}) must be 0`);
       })
@@ -1285,7 +1290,9 @@ test('discardRejectedMessagesToDMQ with 1 message', t => {
     configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
 
     t.plan(2);
-    discardRejectedMessagesToDMQ([message], context)
+
+    const batchKey = streamProcessing.resolveBatchKey([record], context);
+    discardRejectedMessagesToDMQ([message], batchKey, context)
       .then(results => {
         t.equal(results.length, 1, `discardRejectedMessagesToDMQ results (${results.length}) must be 1`);
       })
@@ -1327,7 +1334,8 @@ test('discardRejectedMessagesToDMQ with 2 messages', t => {
     configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
 
     t.plan(3);
-    discardRejectedMessagesToDMQ(messages, context)
+    const batchKey = streamProcessing.resolveBatchKey(records, context);
+    discardRejectedMessagesToDMQ(messages, batchKey, context)
       .then(results => {
         t.equal(results.length, 2, `discardRejectedMessagesToDMQ results (${results.length}) must be 2`);
       })
@@ -1364,7 +1372,8 @@ test('discardRejectedMessagesToDMQ with 1 record and failure', t => {
     configureDefaultKinesisStreamProcessing(context, undefined, undefined, undefined, event, awsContext, true);
 
     t.plan(2);
-    discardRejectedMessagesToDMQ([message], context)
+    const batchKey = streamProcessing.resolveBatchKey([record], context);
+    discardRejectedMessagesToDMQ([message], batchKey, context)
       .then(() => {
         t.fail(`discardRejectedMessagesToDMQ expected a failure`);
       })
