@@ -365,7 +365,7 @@ function validateTaskDefinitions(processOneTaskDefs, processAllTaskDefs, context
       const taskNames = taskDefs.map(d => d.name);
       if (!Arrays.isDistinct(taskNames)) {
         // This Lambda is unusable, so trigger an exception to put all records back until it can be fixed!
-        const errMsg = `FATAL - ${name} must have no duplicate task names ${stringify(taskNames)}! Fix your Lambda and redeploy ASAP, since this issue is blocking all of your stream's shards!`;
+        const errMsg = `FATAL - ${name} must have no duplicate task names ${JSON.stringify(taskNames)}! Fix your Lambda and redeploy ASAP, since this issue is blocking all of your stream's shards!`;
         context.error(errMsg);
         throw new Error(errMsg);
       }
@@ -538,7 +538,7 @@ function extractMessageFromStreamEventRecord(record, context) {
       const msg = extractMessageFromRecord(record, context);
       if (!msg || typeof msg !== 'object') {
         const fnName = isNotBlank(extractMessageFromRecord.name) ? extractMessageFromRecord.name : 'extract message from record';
-        context.error(`The message extracted from stream event record using the configured ${fnName} function MUST be an object (${stringify(msg)}) - discarding record (${stringify(record)})`);
+        context.error(`The message extracted from stream event record using the configured ${fnName} function MUST be an object (${msg}) - discarding record (${JSON.stringify(record)})`);
         return undefined;
       }
       return msg;
@@ -547,11 +547,11 @@ function extractMessageFromStreamEventRecord(record, context) {
       // NB: Do NOT throw an error in this case, since an un-parsable record will most likely remain an un-parsable record
       // forever and throwing an error would result in an "infinite" loop back to Kinesis until the record eventually expires
       const fnName = isNotBlank(extractMessageFromRecord.name) ? extractMessageFromRecord.name : 'extractMessageFromRecord';
-      context.error(`Failed to extract message from record using the configured ${fnName} function - error (${stringify(err)} - discarding record (${stringify(record)})`, err.stack);
+      context.error(`Failed to extract message from record using the configured ${fnName} function - discarding record`, err.stack);
       return undefined;
     }
   } else {
-    context.error(`Cannot extract a message from record without a valid, configured extractMessageFromRecord function - discarding record (${stringify(record)})`);
+    context.error(`Cannot extract a message from record without a valid, configured extractMessageFromRecord function - discarding record`);
     return undefined;
   }
 }
@@ -695,12 +695,12 @@ function executeProcessOneTask(task, message, context) {
   return task.execute(message, context).then(
     result => {
       context.info(`Task (${task.name}) success took ${Date.now() - startMs} ms`);
-      context.trace(`Finished executing task (${task.name}) - state (${stringify(task.state)}) on message (${stringify(message)})`);
+      context.trace(`Finished executing task (${task.name}) - state (${JSON.stringify(task.state)}) on message`);
       return result;
     },
     err => {
       context.info(`Task (${task.name}) failure took ${Date.now() - startMs} ms`);
-      context.error(`Failed to execute task (${task.name}) - state (${stringify(task.state)}) on message - error (${stringify(err)})`, err.stack);
+      context.error(`Failed to execute task (${task.name}) - state (${JSON.stringify(task.state)}) on message - `, err.stack);
       return undefined;
     });
 }
@@ -773,7 +773,7 @@ function executeProcessAllTasks(messages, processAllTaskDefs, context) {
       return executeProcessAllTask(masterTask, incompleteMessages, context);
     } else {
       // The current task has been completed on all of the messages, so return its promise as undefined
-      if (context.debugEnabled) context.debug(`Skipping execution of fully finalised task (${taskName})${taskDef.subTaskDefs.length > 0 ? ` and its sub-tasks ${stringify(taskDef.subTaskDefs.map(d => d.name))}` : ''} with no incomplete messages out of all ${messages.length} messages`);
+      if (context.debugEnabled) context.debug(`Skipping execution of fully finalised task (${taskName})${taskDef.subTaskDefs.length > 0 ? ` and its sub-tasks ${JSON.stringify(taskDef.subTaskDefs.map(d => d.name))}` : ''} with no incomplete messages out of all ${messages.length} messages`);
       return undefined;
     }
   }).filter(p => !!p); // drop all undefined promises, which were tasks with no incomplete messages
@@ -816,12 +816,12 @@ function executeProcessAllTask(task, messages, context) {
   return task.execute(messages, context).then(
     result => {
       context.info(`Task (${task.name}) success took ${Date.now() - startMs} ms`);
-      context.trace(`Finished executing task (${task.name}) - state (${stringify(task.state)}) on messages (${stringify(messages)})`);
+      context.trace(`Finished executing task (${task.name}) - state (${JSON.stringify(task.state)}) on messages`);
       return result;
     },
     err => {
       context.info(`Task ${task.name} failure took ${Date.now() - startMs} ms`);
-      context.error(`Failed to execute task (${task.name}) - state (${stringify(task.state)}) on ${messages.length} messages - error (${stringify(err)})`, err.stack);
+      context.error(`Failed to execute task (${task.name}) - state (${JSON.stringify(task.state)}) on ${messages.length} messages - `, err.stack);
       return undefined;
     });
 }
@@ -895,7 +895,7 @@ function taskExecutePromiseFactory(task, execute) {
         return Promise.reject(err);
       }
     } else {
-      logger.warn(`Attempted to execute a fully finalised task (${task.name}) - ${stringify(task)}`);
+      logger.warn(`Attempted to execute a fully finalised task (${task.name}) - ${JSON.stringify(task)}`);
       return task.completed ? Promise.allOrOne(task.result) : Promise.resolve(undefined);
     }
   }
@@ -1034,14 +1034,14 @@ function discardAnyUnusableRecords(unusableRecords, records, context) {
   if (discardUnusableRecords) {
     // Trigger the configured discardUnusableRecords function to do the actual discarding
     return Promise.try(() => Promise.allOrOne(discardUnusableRecords(unusableRecords, context.batchKey, context)))
-      .then(results => {
-        context.info(`Discarded ${usOfRs} - results (${stringify(results)}`);
+      .then(() => {
+        context.info(`Discarded ${usOfRs}`);
         return unusableRecords;
       })
       .catch(err => {
         // If discard fails, then no choice left, but to throw an exception back to Lambda to force a replay of the batch of records (BAD!) :(
         const fnName = isNotBlank(discardUnusableRecords.name) ? discardUnusableRecords.name : 'discardUnusableRecords';
-        context.error(`Failed to discard ${usOfRs} using the configured ${fnName} function - error (${stringify(err)}) - forced to trigger a replay`, err.stack);
+        context.error(`Failed to discard ${usOfRs} using the configured ${fnName} function - forced to trigger a replay`, err.stack);
         throw err;
       });
   } else {
@@ -1202,7 +1202,7 @@ function completeStreamConsumerResults(streamConsumerResults, resultsOrErrors) {
 }
 
 function logStreamConsumerResults(streamConsumerResults, context) {
-  context.debug(`Stream consumer results: ${stringify(streamConsumerResults)}`);
+  // context.trace(`Stream consumer results: ${stringify(streamConsumerResults)}`);
   context.info(`Stream consumer summarized results: ${stringify(summarizeStreamConsumerResults(streamConsumerResults), false)}`);
 }
 
@@ -1369,13 +1369,13 @@ function saveAllMessagesTaskTrackingState(messages, context) {
   if (saveTaskTrackingState) {
     // Trigger the configured saveMessagesTaskTrackingState function to do the actual saving
     return Promise.try(() => Promise.allOrOne(saveTaskTrackingState(messages, context)))
-      .then(results => {
-        if (context.traceEnabled) context.trace(`Saved task tracking state of ${ms} - results (${stringify(results)}`);
+      .then(() => {
+        if (context.traceEnabled) context.trace(`Saved task tracking state of ${ms}`);
         return messages;
       })
       .catch(err => {
         const fnName = isNotBlank(saveTaskTrackingState.name) ? saveTaskTrackingState.name : 'saveMessagesTaskTrackingState';
-        context.error(`Failed to save task tracking state of ${ms} using the configured ${fnName} function - error (${stringify(err)}`, err.stack);
+        context.error(`Failed to save task tracking state of ${ms} using the configured ${fnName} function -`, err.stack);
         throw err;
       });
   } else {
@@ -1420,14 +1420,14 @@ function handleAnyIncompleteMessages(messages, context) {
   if (handleIncompleteMessages) {
     // Trigger the configured handleIncompleteMessages function to do the actual handling of the incomplete messages
     return Promise.try(() => Promise.allOrOne(handleIncompleteMessages(messages, incompleteMessages, context)))
-      .then(results => {
-        context.info(`Handled ${isOfMs} - results (${stringify(results)}`);
+      .then(() => {
+        context.info(`Handled ${isOfMs}`);
         return incompleteMessages;
       })
       .catch(err => {
         // If handle fails, then no choice left, but to throw an exception back to Lambda to force a replay of the batch of messages (BAD!) :(
         const fnName = isNotBlank(handleIncompleteMessages.name) ? handleIncompleteMessages.name : 'handleIncompleteMessages';
-        context.error(`Failed to handle ${isOfMs} using the configured ${fnName} function - error (${stringify(err)} - forced to trigger a replay`, err.stack);
+        context.error(`Failed to handle ${isOfMs} using the configured ${fnName} function - forced to trigger a replay`, err.stack);
         throw err;
       });
   } else {
@@ -1485,14 +1485,14 @@ function discardAnyRejectedMessages(messages, context) {
   if (discardRejectedMessages) {
     // Trigger the configured discardRejectedMessages function to do the actual discarding
     return Promise.try(() => Promise.allOrOne(discardRejectedMessages(rejectedMessages, context.batchKey, context)))
-      .then(results => {
-        context.info(`Discarded ${rsOfMs} - results (${stringify(results)}`);
+      .then(() => {
+        context.info(`Discarded ${rsOfMs}`);
         return rejectedMessages;
       })
       .catch(err => {
         // If discard fails, then no choice left, but to throw an exception back to Lambda to force a replay of the batch of messages (BAD!) :(
         const fnName = isNotBlank(discardRejectedMessages.name) ? discardRejectedMessages.name : 'discardRejectedMessages';
-        context.error(`Failed to discard ${rsOfMs} using the configured ${fnName} function - error (${stringify(err)}) - forced to trigger a replay`, err.stack);
+        context.error(`Failed to discard ${rsOfMs} using the configured ${fnName} function - forced to trigger a replay`, err.stack);
         throw err;
       });
   } else {

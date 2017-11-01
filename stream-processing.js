@@ -151,7 +151,6 @@ const Strings = require('core-functions/strings');
 const isBlank = Strings.isBlank;
 const isNotBlank = Strings.isNotBlank;
 const trim = Strings.trim;
-const stringify = Strings.stringify;
 
 // const logging = require('logging-utils');
 
@@ -216,7 +215,7 @@ function configureStreamProcessing(context, settings, options, standardSettings,
 
   // Log a warning if no settings and no options were provided and the default settings were applied
   if (!settingsAvailable && !optionsAvailable && (forceConfiguration || !streamProcessingWasConfigured)) {
-    context.warn(`Stream processing was configured without settings or options - used default stream processing configuration (${stringify(streamProcessingSettings)})`);
+    context.warn(`Stream processing was configured without settings or options - used default stream processing configuration`);
   }
   return context;
 }
@@ -617,7 +616,7 @@ function useStreamEventRecordAsMessage(record, context) {
     throw new Error(errMsg);
   }
   // Use the given stream event record as the message
-  if (context.traceEnabled) context.trace(`Using stream event record (${stringify(record)}) as the message`);
+  if (context.traceEnabled) context.trace(`Using stream event record as the message`);
   return record;
 }
 
@@ -1061,7 +1060,7 @@ function getKinesis(context) {
   if (!context.kinesis) {
     // Configure a default Kinesis instance on context.kinesis if not already configured
     const kinesisOptions = require('./default-kinesis-options.json').kinesisOptions;
-    context.warn(`An AWS Kinesis instance was not configured on context.kinesis yet - configuring an instance with default options (${stringify(kinesisOptions)}). Preferably configure this beforehand, using aws-core-utils/kinesis-cache#configureKinesis`);
+    context.warn(`An AWS Kinesis instance was not configured on context.kinesis yet - configuring an instance with default options (${JSON.stringify(kinesisOptions)}). Preferably configure this beforehand, using aws-core-utils/kinesis-cache#configureKinesis`);
     kinesisCache.configureKinesis(context, kinesisOptions);
   }
   return context.kinesis;
@@ -1157,8 +1156,8 @@ function saveTaskTrackingStateToDynamoDB(messages, context) {
   const promises = messages.map(message => saveMessageTaskTrackingDetails(message));
 
   return Promise.all(promises)
-    .then(results => {
-      context.info(`Saved task tracking details of ${m} incomplete message${plural} to DynamoDB table (${tableName}) - results: ${stringify(results)}`);
+    .then(() => {
+      context.info(`Saved task tracking details of ${m} incomplete message${plural} to DynamoDB table (${tableName})`);
       throw new Error(`Triggering replay of batch after saving task tracking details of ${m} incomplete message${plural} to DynamoDB table (${tableName})`);
     })
     .catch(err => {
@@ -1285,7 +1284,7 @@ function resolveBatchKey(records, context) {
   const record1 = records.find(r => r && typeof r === 'object' && isNotBlank(r.eventID) && isNotBlank(r.eventSourceARN));
 
   if (!record1) {
-    context.error(`Failed to resolve a batch key to use, since failed to find any record with an eventID and eventSourceARN - records ${stringify(records)}`);
+    context.error(`Failed to resolve a batch key to use, since failed to find any record with an eventID and eventSourceARN`);
     return undefined;
   }
 
